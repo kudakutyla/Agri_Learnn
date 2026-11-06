@@ -1,0 +1,10 @@
+{
+  "description": "AgriLearn helps farmers, agricultural workers, students, and small businesses build practical skills through courses, assessments, certificates, and career opportunities.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
