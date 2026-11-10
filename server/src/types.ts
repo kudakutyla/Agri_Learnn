@@ -21,4 +21,5 @@ export type CourseFile = {
   name: string;
   mimeType: string;
   size: number;
+  durationSeconds?: number;
 };

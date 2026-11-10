@@ -1,14 +1,30 @@
+import 'dotenv/config';
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { z } from 'zod';
 import { CourseFile, Role, User } from './types.js';
 import { store } from './store.js';
+import { isPasswordResetEmailConfigured, sendPasswordResetEmail } from './email.js';
+import {
+  abortMultipartUpload,
+  beginMultipartUpload,
+  completeMultipartUpload,
+  createPartUploadUrl,
+  createPlaybackUrl,
+  createSingleUploadUrl,
+  deleteVideoObject,
+  getVideoUploadPolicy,
+  InvalidVideoContentError,
+  R2ConfigurationError,
+  R2ObjectMissingError,
+  verifyUploadedVideo,
+} from './r2.js';
 
 export const app = express();
 app.use(cors());
@@ -18,13 +34,10 @@ const port = Number(process.env.PORT ?? 4000);
 const jwtSecret = process.env.JWT_SECRET ?? 'development-only-secret-change-me';
 const uploadDirectory = resolve(process.env.UPLOADS_DIR ?? resolve(process.cwd(), 'data', 'uploads'));
 const videoMimeTypes: Record<string, string> = {
-  '.m4v': 'video/x-m4v',
   '.mov': 'video/quicktime',
   '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
 };
 const pdfMimeType = 'application/pdf';
-const videoMaxBytes = 200 * 1024 * 1024;
 const pdfMaxBytes = 25 * 1024 * 1024;
 
 class UnsupportedFileError extends Error {}
@@ -37,18 +50,16 @@ const fileStorage = multer.diskStorage({
   filename: (_req, file, callback) => callback(null, `${randomUUID()}${extname(file.originalname).toLowerCase()}`),
 });
 
-function createFileUpload(kind: 'video' | 'pdf', maxBytes: number) {
+function createPdfUpload(maxBytes: number) {
   return multer({
     storage: fileStorage,
     limits: { fileSize: maxBytes },
     fileFilter: (_req, file, callback) => {
       const extension = extname(file.originalname).toLowerCase();
-      const expectedMimeType = kind === 'pdf' ? pdfMimeType : videoMimeTypes[extension];
+      const expectedMimeType = extension === '.pdf' ? pdfMimeType : undefined;
       const validMimeType = file.mimetype === expectedMimeType || file.mimetype === 'application/octet-stream';
       if (!expectedMimeType || !validMimeType) {
-        callback(new UnsupportedFileError(kind === 'pdf'
-          ? 'Choose a PDF notes file.'
-          : 'Choose an MP4, MOV, M4V, or WebM video.'));
+        callback(new UnsupportedFileError('Choose a PDF notes file.'));
         return;
       }
       callback(null, true);
@@ -56,8 +67,7 @@ function createFileUpload(kind: 'video' | 'pdf', maxBytes: number) {
   }).single('file');
 }
 
-const videoFileUpload = createFileUpload('video', videoMaxBytes);
-const pdfFileUpload = createFileUpload('pdf', pdfMaxBytes);
+const pdfFileUpload = createPdfUpload(pdfMaxBytes);
 
 const registerSchema = z.object({
   name: z.string().trim().min(2).max(80),
@@ -70,6 +80,14 @@ const registerSchema = z.object({
   primaryInterest: z.string().trim().max(120).default(''),
 });
 const loginSchema = registerSchema.pick({ email: true, password: true });
+const forgotPasswordSchema = z.object({
+  email: z.string().trim().email().max(120),
+});
+const resetPasswordSchema = z.object({
+  token: z.string().min(32).max(256),
+  newPassword: z.string().min(8).max(72),
+  confirmPassword: z.string().min(8).max(72),
+}).refine((data) => data.newPassword === data.confirmPassword);
 
 function publicUser(user: User) {
   return {
@@ -133,6 +151,56 @@ app.post('/api/auth/register', async (req, res) => {
     primaryInterest: parsed.data.primaryInterest,
   });
   return res.status(201).json({ user: publicUser(user), token: signToken(user) });
+});
+
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const parsed = forgotPasswordSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Enter a valid email address.' });
+  if (!isPasswordResetEmailConfigured()) {
+    return res.status(503).json({ error: 'Password recovery is temporarily unavailable. Please try again later.' });
+  }
+
+  const user = store.users.findByEmail(parsed.data.email.toLowerCase());
+  if (!user) return res.json({ message: 'If an account exists for that email, a password reset link has been sent.' });
+
+  const token = randomBytes(32).toString('hex');
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  for (const reset of store.list('passwordResets')) {
+    if (reset.userId === user.id && typeof reset.id === 'string') {
+      store.remove('passwordResets', reset.id);
+    }
+  }
+  store.create('passwordResets', {
+    userId: user.id,
+    tokenHash,
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  });
+
+  try {
+    const resetUrl = new URL(process.env.PASSWORD_RESET_URL ?? 'agrilearn:///reset-password');
+    resetUrl.searchParams.set('token', token);
+    await sendPasswordResetEmail({ email: user.email, name: user.name, resetUrl: resetUrl.toString() });
+  } catch (error) {
+    console.error('Password reset email delivery failed:', error);
+  }
+  return res.json({ message: 'If an account exists for that email, a password reset link has been sent.' });
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  const parsed = resetPasswordSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Enter matching passwords with at least 8 characters.' });
+  if (!/^[a-f0-9]{64}$/i.test(parsed.data.token)) {
+    return res.status(400).json({ error: 'This password reset link is invalid or has expired. Request a new link and try again.' });
+  }
+  const tokenHash = createHash('sha256').update(parsed.data.token).digest('hex');
+  if (!store.hasValidPasswordReset(tokenHash)) {
+    return res.status(400).json({ error: 'This password reset link is invalid or has expired. Request a new link and try again.' });
+  }
+  const passwordHash = await bcrypt.hash(parsed.data.newPassword, 12);
+  if (!store.resetPassword(tokenHash, passwordHash)) {
+    return res.status(400).json({ error: 'This password reset link is invalid or has expired. Request a new link and try again.' });
+  }
+  return res.json({ message: 'Your password has been reset. Sign in with your new password.' });
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -399,6 +467,7 @@ const courseLessonSchema = z.object({
     name: z.string().trim().min(1).max(180),
     mimeType: z.string().trim().min(1).max(80),
     size: z.number().int().positive(),
+    durationSeconds: z.number().finite().positive().max(24 * 60 * 60).optional(),
   }).optional(),
 });
 const courseLessonsSchema = z.array(courseLessonSchema).max(30);
@@ -445,6 +514,392 @@ const jobSchema = z.object({
 });
 const categorySchema = z.object({ name: z.string().trim().min(2).max(80), slug: z.string().trim().regex(/^[a-z0-9-]+$/) });
 
+const videoUploadSchema = z.object({
+  lessonIndex: z.number().int().min(0).max(29),
+  fileName: z.string().trim().min(1).max(500),
+  mimeType: z.string().trim().min(1).max(100),
+  fileSize: z.number().int().positive(),
+  durationSeconds: z.number().finite().positive().max(24 * 60 * 60).optional(),
+});
+const multipartPartsSchema = z.object({
+  parts: z.array(z.object({
+    partNumber: z.number().int().min(1).max(10_000),
+    etag: z.string().trim().min(1).max(200).regex(/^"?[A-Za-z0-9-]+"?$/),
+  })).min(1).max(10_000),
+});
+
+function safeVideoFileName(value: string) {
+  const baseName = value.split(/[\\/]/).pop()?.normalize('NFKC') ?? '';
+  const cleaned = baseName
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/[^A-Za-z0-9._ -]/g, '_')
+    .replace(/^\.+/, '')
+    .trim()
+    .slice(0, 120);
+  return cleaned || 'lesson-video';
+}
+
+function videoUploadError(res: Response, error: unknown, operation: string) {
+  if (error instanceof R2ConfigurationError) {
+    return res.status(503).json({ error: 'Cloud video storage is not configured. Contact the platform administrator.' });
+  }
+  const errorName = error instanceof Error ? error.name : 'UnknownError';
+  console.error(`Cloud video storage ${operation} failed`, { errorName });
+  return res.status(502).json({ error: 'Cloud video storage is temporarily unavailable. Please try again.' });
+}
+
+function videoCourseAccess(courseId: string, user: User) {
+  const course = store.list('courses').find((item) => item.id === courseId);
+  if (!course) return { error: 'Course not found' as const };
+  if (user.role !== 'admin' && course.ownerId !== user.id) {
+    return { error: 'Cannot manage videos for another trainer’s course' as const };
+  }
+  return { course };
+}
+
+function publicVideoRecord(video: Record<string, unknown>, course?: Record<string, unknown>) {
+  const lessons = Array.isArray(course?.lessons) ? course.lessons as Array<Record<string, unknown>> : [];
+  const lessonIndex = Number(video.lessonIndex);
+  const lesson = lessons[lessonIndex];
+  return {
+    id: video.id,
+    courseId: video.courseId,
+    courseTitle: course?.title ?? 'Deleted course',
+    lessonIndex,
+    lessonTitle: typeof lesson?.title === 'string' ? lesson.title : `Lesson ${lessonIndex + 1}`,
+    originalFileName: video.originalFileName,
+    mimeType: video.mimeType,
+    fileSize: video.fileSize,
+    durationSeconds: video.durationSeconds,
+    status: video.status,
+    uploadedBy: video.uploadedBy,
+    createdAt: video.createdAt,
+    updatedAt: video.updatedAt,
+  };
+}
+
+async function removeVideoRecord(video: Record<string, unknown>) {
+  const storageKey = typeof video.storageKey === 'string' ? video.storageKey : undefined;
+  const uploadId = typeof video.multipartUploadId === 'string' ? video.multipartUploadId : undefined;
+  if (storageKey && video.status === 'pending' && uploadId) {
+    await abortMultipartUpload({ key: storageKey, uploadId });
+  } else if (storageKey && (
+    video.status === 'uploaded'
+    || video.status === 'delete_failed'
+    || video.status === 'failed'
+    || (video.status === 'pending' && video.uploadType === 'single')
+  )) {
+    await deleteVideoObject(storageKey);
+  }
+  const videoId = String(video.id ?? '');
+  const course = store.list('courses').find((item) => item.id === video.courseId);
+  if (course && Array.isArray(course.lessons)) {
+    const lessons = course.lessons as Array<Record<string, unknown>>;
+    const updatedLessons = lessons.map((lesson) => {
+      const file = lesson.file;
+      if (!file || typeof file !== 'object' || !('id' in file) || file.id !== videoId) return lesson;
+      const { file: _removedFile, ...rest } = lesson;
+      return rest;
+    });
+    if (updatedLessons.some((lesson, index) => lesson !== lessons[index])) {
+      store.update('courses', String(course.id), { lessons: updatedLessons });
+    }
+  }
+  store.remove('videos', videoId);
+}
+
+app.post('/api/courses/:id/videos/uploads', requireAuth, requireRole('trainer', 'admin'), async (req, res) => {
+  const courseId = String(req.params.id);
+  const access = videoCourseAccess(courseId, res.locals.user);
+  if ('error' in access) return res.status(access.error === 'Course not found' ? 404 : 403).json({ error: access.error });
+  const { course } = access;
+  if (course.status === 'submitted' && res.locals.user.role !== 'admin') {
+    return res.status(409).json({ error: 'Submitted content cannot be changed until it has been reviewed.' });
+  }
+  const parsed = videoUploadSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid video upload details.' });
+  let policy: ReturnType<typeof getVideoUploadPolicy>;
+  try {
+    policy = getVideoUploadPolicy();
+  } catch (error) {
+    return videoUploadError(res, error, 'upload configuration');
+  }
+  if (parsed.data.fileSize > policy.maxBytes) {
+    return res.status(413).json({ error: `Video files must be ${Math.floor(policy.maxBytes / (1024 * 1024))} MB or smaller.` });
+  }
+
+  const originalFileName = safeVideoFileName(parsed.data.fileName);
+  const extension = extname(originalFileName).toLowerCase();
+  const mimeType = videoMimeTypes[extension];
+  if (!mimeType || parsed.data.mimeType !== mimeType) {
+    return res.status(415).json({ error: 'Choose a valid MP4 or MOV video file.' });
+  }
+  if (course.status === 'approved') {
+    const lessons = Array.isArray(course.lessons) ? course.lessons as Array<Record<string, unknown>> : [];
+    const lesson = lessons[parsed.data.lessonIndex];
+    if (!lesson || lesson.type !== 'Video') {
+      return res.status(400).json({ error: 'Select an existing video lesson to replace.' });
+    }
+  }
+
+  const videoId = randomUUID();
+  const storageKey = `videos/${courseId}/${videoId}${extension}`;
+  let multipartUploadId: string | undefined;
+  try {
+    const multipart = parsed.data.fileSize >= policy.multipartThresholdBytes;
+    let uploadUrl: string | undefined;
+    if (multipart) {
+      multipartUploadId = await beginMultipartUpload({ key: storageKey, mimeType });
+    } else {
+      uploadUrl = await createSingleUploadUrl({
+        key: storageKey,
+        mimeType,
+      });
+    }
+    const video = store.createVideo(videoId, {
+      courseId,
+      lessonIndex: parsed.data.lessonIndex,
+      originalFileName,
+      storageKey,
+      mimeType,
+      fileSize: parsed.data.fileSize,
+      durationSeconds: parsed.data.durationSeconds,
+      status: 'pending',
+      uploadedBy: res.locals.user.id,
+      uploadType: multipart ? 'multipart' : 'single',
+      multipartUploadId,
+    });
+    return res.status(201).json({
+      video: publicVideoRecord(video, course),
+      upload: multipart
+        ? { type: 'multipart', partSizeBytes: policy.partSizeBytes, expiresInSeconds: 900 }
+        : { type: 'single', url: uploadUrl, expiresInSeconds: 900 },
+    });
+  } catch (error) {
+    if (multipartUploadId) {
+      try {
+        await abortMultipartUpload({ key: storageKey, uploadId: multipartUploadId });
+      } catch {
+        console.error('Could not abort an incomplete R2 multipart upload', { videoId });
+      }
+    }
+    return videoUploadError(res, error, 'upload initialization');
+  }
+});
+
+app.post('/api/videos/:id/parts/:partNumber/upload-url', requireAuth, requireRole('trainer', 'admin'), async (req, res) => {
+  const video = store.list('videos').find((record) => record.id === String(req.params.id));
+  if (!video) return res.status(404).json({ error: 'Video upload not found.' });
+  const access = videoCourseAccess(String(video.courseId), res.locals.user);
+  if ('error' in access) return res.status(access.error === 'Course not found' ? 404 : 403).json({ error: access.error });
+  if (video.status !== 'pending' || video.uploadType !== 'multipart' || typeof video.multipartUploadId !== 'string') {
+    return res.status(409).json({ error: 'This video upload is no longer active.' });
+  }
+  const partNumber = Number(req.params.partNumber);
+  let policy: ReturnType<typeof getVideoUploadPolicy>;
+  try {
+    policy = getVideoUploadPolicy();
+  } catch (error) {
+    return videoUploadError(res, error, 'multipart configuration');
+  }
+  const expectedPartCount = Math.ceil(Number(video.fileSize) / policy.partSizeBytes);
+  if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > expectedPartCount || partNumber > 10_000) {
+    return res.status(400).json({ error: 'Video part number is invalid.' });
+  }
+  try {
+    const url = await createPartUploadUrl({
+      key: String(video.storageKey),
+      uploadId: video.multipartUploadId,
+      partNumber,
+    });
+    return res.json({ url, expiresInSeconds: 900 });
+  } catch (error) {
+    return videoUploadError(res, error, 'multipart URL signing');
+  }
+});
+
+app.post('/api/videos/:id/complete', requireAuth, requireRole('trainer', 'admin'), async (req, res) => {
+  const video = store.list('videos').find((record) => record.id === String(req.params.id));
+  if (!video) return res.status(404).json({ error: 'Video upload not found.' });
+  const access = videoCourseAccess(String(video.courseId), res.locals.user);
+  if ('error' in access) return res.status(access.error === 'Course not found' ? 404 : 403).json({ error: access.error });
+  if (video.status !== 'pending') return res.status(409).json({ error: 'This video upload has already been completed or closed.' });
+
+  let policy: ReturnType<typeof getVideoUploadPolicy>;
+  try {
+    policy = getVideoUploadPolicy();
+  } catch (error) {
+    return videoUploadError(res, error, 'completion configuration');
+  }
+  let parts: Array<{ partNumber: number; etag: string }> = [];
+  if (video.uploadType === 'multipart') {
+    const parsedParts = multipartPartsSchema.safeParse(req.body);
+    const expectedPartCount = Math.ceil(Number(video.fileSize) / policy.partSizeBytes);
+    if (!parsedParts.success || parsedParts.data.parts.length !== expectedPartCount) {
+      return res.status(400).json({ error: 'Every video part must be uploaded before completing the upload.' });
+    }
+    const uniqueParts = new Set(parsedParts.data.parts.map((part) => part.partNumber));
+    if (uniqueParts.size !== expectedPartCount
+      || parsedParts.data.parts.some((part) => part.partNumber > expectedPartCount)) {
+      return res.status(400).json({ error: 'Video upload parts are incomplete or duplicated.' });
+    }
+    parts = parsedParts.data.parts
+      .map((part) => ({ partNumber: part.partNumber, etag: part.etag.replace(/^"|"$/g, '') }))
+      .sort((a, b) => a.partNumber - b.partNumber);
+  }
+
+  try {
+    if (video.uploadType === 'multipart') {
+      await completeMultipartUpload({
+        key: String(video.storageKey),
+        uploadId: String(video.multipartUploadId),
+        parts,
+      });
+    }
+    await verifyUploadedVideo({
+      key: String(video.storageKey),
+      mimeType: String(video.mimeType),
+      size: Number(video.fileSize),
+    });
+  } catch (error) {
+    if (error instanceof R2ObjectMissingError) {
+      store.update('videos', String(video.id), { status: 'failed' });
+      return res.status(409).json({ error: 'The uploaded video is missing. Please upload it again.' });
+    }
+    if (error instanceof InvalidVideoContentError) {
+      try {
+        await deleteVideoObject(String(video.storageKey));
+      } catch {
+        console.error('Could not remove a rejected R2 video object', { videoId: video.id });
+      }
+      store.update('videos', String(video.id), { status: 'failed' });
+      return res.status(415).json({ error: 'The uploaded file is not a supported MP4 or MOV video.' });
+    }
+    return videoUploadError(res, error, 'upload verification');
+  }
+
+  const readyVideo = store.update('videos', String(video.id), {
+    status: 'uploaded',
+    uploadedAt: new Date().toISOString(),
+    multipartUploadId: undefined,
+  });
+  if (!readyVideo) return res.status(500).json({ error: 'Video metadata could not be saved.' });
+  const file: CourseFile = {
+    id: String(video.id),
+    name: String(video.originalFileName),
+    mimeType: String(video.mimeType),
+    size: Number(video.fileSize),
+  };
+  if (typeof video.durationSeconds === 'number') file.durationSeconds = video.durationSeconds;
+
+  const course = store.list('courses').find((record) => record.id === video.courseId);
+  const lessons = Array.isArray(course?.lessons) ? course.lessons as Array<Record<string, unknown>> : [];
+  const oldFile = lessons[Number(video.lessonIndex)]?.file;
+  if (course && lessons[Number(video.lessonIndex)]) {
+    const updatedLessons = lessons.map((lesson, index) => index === Number(video.lessonIndex)
+      ? { ...lesson, file }
+      : lesson);
+    const updatedCourse = store.update('courses', String(course.id), { lessons: updatedLessons });
+    if (!updatedCourse) return res.status(500).json({ error: 'Video was uploaded, but its lesson association could not be saved.' });
+
+    if (oldFile && typeof oldFile === 'object' && 'id' in oldFile && typeof oldFile.id === 'string' && oldFile.id !== video.id) {
+      const oldVideo = store.list('videos').find((record) => record.id === oldFile.id);
+      if (oldVideo) {
+        try {
+          await deleteVideoObject(String(oldVideo.storageKey));
+          store.remove('videos', String(oldVideo.id));
+        } catch (error) {
+          const errorName = error instanceof Error ? error.name : 'UnknownError';
+          console.error('Could not remove the replaced R2 video', { videoId: oldVideo.id, errorName });
+          store.update('videos', String(oldVideo.id), { status: 'delete_failed' });
+        }
+      }
+    }
+  }
+  return res.json({ video: publicVideoRecord(readyVideo, course), file });
+});
+
+app.get('/api/trainer/videos', requireAuth, requireRole('trainer', 'admin'), (req, res) => {
+  const ownedCourses = res.locals.user.role === 'admin'
+    ? undefined
+    : new Set(store.list('courses')
+      .filter((course) => course.ownerId === res.locals.user.id)
+      .map((course) => course.id));
+  const videos = store.list('videos')
+    .filter((video) => !ownedCourses || ownedCourses.has(String(video.courseId)))
+    .map((video) => publicVideoRecord(video, store.list('courses').find((course) => course.id === video.courseId)));
+  return res.json({ videos });
+});
+
+app.get('/api/admin/videos', requireAuth, requireRole('admin'), (_req, res) => {
+  const courses = new Map(store.list('courses').map((course) => [course.id, course]));
+  const videos = store.list('videos').map((video) =>
+    publicVideoRecord(video, courses.get(String(video.courseId))));
+  return res.json({ videos });
+});
+
+app.get('/api/videos/:id/playback-url', requireAuth, async (req, res) => {
+  const video = store.list('videos').find((record) => record.id === String(req.params.id) && record.status === 'uploaded');
+  if (!video) return res.status(404).json({ error: 'Video is not available.' });
+  const course = store.list('courses').find((record) => record.id === video.courseId);
+  if (!course) return res.status(404).json({ error: 'Course not found.' });
+
+  const lessons = Array.isArray(course.lessons) ? course.lessons as Array<Record<string, unknown>> : [];
+  const lessonIndex = lessons.findIndex((lesson) => {
+    const file = lesson.file;
+    return file && typeof file === 'object' && 'id' in file && file.id === video.id;
+  });
+  if (lessonIndex < 0) {
+    return res.status(404).json({ error: 'Video is not attached to an available lesson.' });
+  }
+  const user = res.locals.user as User;
+  const isManager = user.role === 'admin' || (user.role === 'trainer' && course.ownerId === user.id);
+  if (!isManager) {
+    if (user.role !== 'learner' && user.role !== 'employer') {
+      return res.status(403).json({ error: 'Insufficient permissions.' });
+    }
+    const enrolled = store.list('progress').some((record) =>
+      record.courseId === course.id && record.userId === user.id);
+    if (course.status !== 'approved' || !enrolled) {
+      return res.status(403).json({ error: 'Enrol in this published course to watch its lessons.' });
+    }
+  }
+
+  try {
+    await verifyUploadedVideo({
+      key: String(video.storageKey),
+      mimeType: String(video.mimeType),
+      size: Number(video.fileSize),
+    });
+    const url = await createPlaybackUrl(
+      String(video.storageKey),
+      req.query.download === '1' ? String(video.originalFileName) : undefined,
+    );
+    return res.json({ url, expiresInSeconds: 300 });
+  } catch (error) {
+    if (error instanceof R2ConfigurationError) {
+      return res.status(503).json({ error: 'Cloud video storage is not configured. Contact the platform administrator.' });
+    }
+    if (error instanceof R2ObjectMissingError) {
+      return res.status(404).json({ error: 'This video is no longer available.' });
+    }
+    return videoUploadError(res, error, 'playback URL creation');
+  }
+});
+
+app.delete('/api/videos/:id', requireAuth, requireRole('trainer', 'admin'), async (req, res) => {
+  const video = store.list('videos').find((record) => record.id === String(req.params.id));
+  if (!video) return res.status(404).json({ error: 'Video not found.' });
+  const access = videoCourseAccess(String(video.courseId), res.locals.user);
+  if ('error' in access) return res.status(access.error === 'Course not found' ? 404 : 403).json({ error: access.error });
+  try {
+    await removeVideoRecord(video);
+    return res.status(204).send();
+  } catch (error) {
+    return videoUploadError(res, error, 'video deletion');
+  }
+});
+
 app.get('/api/courses', (req, res) => {
   const courses = store.list('courses');
   if (req.query.published === 'true') {
@@ -466,13 +921,16 @@ app.post('/api/courses/:id/uploads', requireAuth, requireRole('trainer', 'admin'
   }
 
   const kind = req.header('x-upload-kind');
-  if (kind !== 'video' && kind !== 'pdf') return res.status(400).json({ error: 'Choose a video or PDF upload type' });
-  const upload = kind === 'video' ? videoFileUpload : pdfFileUpload;
+  if (kind === 'video') {
+    return res.status(410).json({ error: 'Videos must use the secure Cloudflare R2 upload workflow.' });
+  }
+  if (kind !== 'pdf') return res.status(400).json({ error: 'Choose a PDF upload type' });
+  const upload = pdfFileUpload;
   return upload(req, res, (error) => {
     if (error instanceof multer.MulterError) {
       const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
       const message = error.code === 'LIMIT_FILE_SIZE'
-        ? kind === 'video' ? 'Video files must be 200 MB or smaller.' : 'PDF notes must be 25 MB or smaller.'
+        ? 'PDF notes must be 25 MB or smaller.'
         : 'Choose a single file to upload.';
       return res.status(status).json({ error: message });
     }
@@ -480,7 +938,7 @@ app.post('/api/courses/:id/uploads', requireAuth, requireRole('trainer', 'admin'
     if (error) return next(error);
     if (!req.file) return res.status(400).json({ error: 'Choose a file to upload' });
 
-    const extension = extname(req.file.originalname).toLowerCase();
+    const extension = '.pdf';
     const file: CourseFile = {
       id: req.file.filename.slice(0, -extension.length),
       name: req.file.originalname.split(/[\\/]/).pop()?.trim().slice(0, 180) || 'course-file',
@@ -510,22 +968,38 @@ app.get('/api/courses/:id/files/:fileId', (req, res, next) => {
   if (course.status === 'approved' && !lessons.some((lesson) => lesson.file?.id === file.id)) {
     return res.status(404).json({ error: 'Course file not found' });
   }
-  const extension = Object.entries(videoMimeTypes).find(([, mimeType]) => mimeType === file.mimeType)?.[0]
-    ?? (file.mimeType === pdfMimeType ? '.pdf' : undefined);
-  if (!extension) return res.status(404).json({ error: 'Course file not found' });
+  if (file.mimeType !== pdfMimeType) return res.status(404).json({ error: 'Course file not found' });
+  const extension = '.pdf';
   const filePath = resolve(uploadDirectory, `${file.id}${extension}`);
   if (!existsSync(filePath)) return res.status(404).json({ error: 'Course file is missing' });
   if (req.query.download === '1') return res.download(filePath, file.name);
   res.type(file.mimeType);
   return res.sendFile(filePath);
 });
-app.patch('/api/courses/:id', requireAuth, requireRole('trainer', 'admin'), (req, res) => {
+app.patch('/api/courses/:id', requireAuth, requireRole('trainer', 'admin'), async (req, res) => {
   const courseId = String(req.params.id);
   const record = store.list('courses').find((item) => item.id === courseId) as Record<string, unknown> | undefined;
   if (!record) return res.status(404).json({ error: 'Course not found' });
   if (res.locals.user.role !== 'admin' && record.ownerId !== res.locals.user.id) return res.status(403).json({ error: 'Cannot edit another trainer’s course' });
   const parsed = courseUpdateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid course details' });
+  if (parsed.data.lessons) {
+    const referencedVideoIds = new Set<string>();
+    for (const [lessonIndex, lesson] of parsed.data.lessons.entries()) {
+      if (!lesson.file || !lesson.file.mimeType.startsWith('video/')) continue;
+      if (referencedVideoIds.has(lesson.file.id)) {
+        return res.status(400).json({ error: 'A video cannot be attached to more than one lesson.' });
+      }
+      referencedVideoIds.add(lesson.file.id);
+      const video = store.list('videos').find((item) =>
+        item.id === lesson.file?.id
+        && item.courseId === courseId
+        && item.status === 'uploaded');
+      if (!video || video.mimeType !== lesson.file.mimeType || video.fileSize !== lesson.file.size) {
+        return res.status(400).json({ error: `Lesson ${lessonIndex + 1} must reference its verified Cloudflare video upload.` });
+      }
+    }
+  }
   if (res.locals.user.role !== 'admin') {
     if (parsed.data.status === 'approved' || parsed.data.status === 'rejected') {
       return res.status(403).json({ error: 'Only an administrator can approve or reject course content' });
@@ -552,6 +1026,26 @@ app.patch('/api/courses/:id', requireAuth, requireRole('trainer', 'admin'), (req
     }
   }
   const updated = store.update('courses', courseId, parsed.data);
+  if (updated && parsed.data.lessons) {
+    const lessons = parsed.data.lessons;
+    const linkedVideoIds = new Set<string>();
+    for (const [lessonIndex, lesson] of lessons.entries()) {
+      if (!lesson.file || !lesson.file.mimeType.startsWith('video/')) continue;
+      linkedVideoIds.add(lesson.file.id);
+      store.update('videos', lesson.file.id, { lessonIndex });
+    }
+    for (const video of store.list('videos')) {
+      if (video.courseId !== courseId || video.status !== 'uploaded' || linkedVideoIds.has(String(video.id))) continue;
+      try {
+        await deleteVideoObject(String(video.storageKey));
+        store.remove('videos', String(video.id));
+      } catch (error) {
+        const errorName = error instanceof Error ? error.name : 'UnknownError';
+        console.error('Could not remove an unlinked R2 video', { videoId: video.id, errorName });
+        store.update('videos', String(video.id), { status: 'delete_failed' });
+      }
+    }
+  }
   return res.json({ course: updated });
 });
 
@@ -635,6 +1129,23 @@ app.post('/api/courses/:id/enrol', requireAuth, requireRole('learner', 'employer
   return res.status(201).json({ progress, enrolled: true });
 });
 
+app.get('/api/courses/:id/progress', requireAuth, requireRole('learner', 'employer'), (req, res) => {
+  const courseId = String(req.params.id);
+  const course = store.list('courses').find((item) => item.id === courseId && item.status === 'approved');
+  if (!course) return res.status(404).json({ error: 'Published course not found' });
+  const lessons = Array.isArray(course.lessons) ? course.lessons : [];
+  const savedProgress = store.list('progress').find((record) =>
+    record.courseId === courseId && record.userId === res.locals.user.id);
+  const completedLessons = Array.isArray(savedProgress?.completedLessons)
+    ? savedProgress.completedLessons.filter((index): index is number =>
+      Number.isInteger(index) && index >= 0 && index < lessons.length)
+    : [];
+  return res.json({
+    completedLessons,
+    nextLessonIndex: Math.min(completedLessons.length, Math.max(0, lessons.length - 1)),
+  });
+});
+
 app.post('/api/courses/:id/lessons/:lessonIndex/complete', requireAuth, requireRole('learner', 'employer'), (req, res) => {
   const courseId = String(req.params.id);
   const lessonIndex = Number(req.params.lessonIndex);
@@ -685,11 +1196,19 @@ app.put('/api/courses/:id/assessments', requireAuth, requireRole('trainer', 'adm
   if (!assessment) return res.status(500).json({ error: 'Assessment could not be saved' });
   return res.json({ assessment });
 });
-app.delete('/api/courses/:id', requireAuth, requireRole('trainer', 'admin'), (req, res) => {
+app.delete('/api/courses/:id', requireAuth, requireRole('trainer', 'admin'), async (req, res) => {
   const courseId = String(req.params.id);
   const record = store.list('courses').find((item) => item.id === courseId) as Record<string, unknown> | undefined;
   if (!record) return res.status(404).json({ error: 'Course not found' });
   if (res.locals.user.role !== 'admin' && record.ownerId !== res.locals.user.id) return res.status(403).json({ error: 'Cannot delete another trainer’s course' });
+
+  try {
+    for (const video of store.list('videos').filter((item) => item.courseId === courseId)) {
+      await removeVideoRecord(video);
+    }
+  } catch (error) {
+    return videoUploadError(res, error, 'course video cleanup');
+  }
   const lessons = Array.isArray(record.lessons) ? record.lessons as Array<{ file?: CourseFile }> : [];
   const files = Array.isArray(record.files) ? record.files as CourseFile[] : [];
   const courseFiles = new Map(files.map((file) => [file.id, file]));
@@ -850,6 +1369,12 @@ app.get('/api/certificates', requireAuth, (req, res) => {
 });
 
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
+app.use((error: unknown, req: Request, res: Response, next: NextFunction) => {
+  if (res.headersSent) return next(error);
+  const errorName = error instanceof Error ? error.name : 'UnknownError';
+  console.error('Unhandled API request error', { method: req.method, path: req.path, errorName });
+  return res.status(500).json({ error: 'The request could not be completed. Please try again.' });
+});
 
 if (process.env.NODE_ENV !== 'test') {
   app.listen(port, () => console.log(`AgriLearn API listening on http://localhost:${port}`));

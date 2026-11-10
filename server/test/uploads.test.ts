@@ -65,7 +65,7 @@ after(async () => {
   rmSync(testDirectory, { recursive: true, force: true });
 });
 
-test('trainers upload PDF notes and videos and retrieve saved lesson files', async () => {
+test('trainers upload PDF notes and retrieve saved lesson files', async () => {
   const courseResponse = await fetch(`${baseUrl}/api/courses`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -83,7 +83,6 @@ test('trainers upload PDF notes and videos and retrieve saved lesson files', asy
   const { course } = await courseResponse.json() as { course: { id: string } };
 
   const attachments = [
-    { kind: 'video', mimeType: 'video/mp4', name: 'lesson.mp4', data: 'video-content' },
     { kind: 'pdf', mimeType: 'application/pdf', name: 'notes.pdf', data: '%PDF-1.7 notes' },
   ] as const;
   const files: Array<{ id: string; name: string; mimeType: string; size: number }> = [];
@@ -98,7 +97,7 @@ test('trainers upload PDF notes and videos and retrieve saved lesson files', asy
     assert.equal(response.status, 201);
     files.push((await response.json() as { file: { id: string; name: string; mimeType: string; size: number } }).file);
   }
-  assert.deepEqual(files.map((file) => file.name), ['lesson.mp4', 'notes.pdf']);
+  assert.deepEqual(files.map((file) => file.name), ['notes.pdf']);
   const privateFileResponse = await fetch(`${baseUrl}/api/courses/${course.id}/files/${files[0].id}`);
   assert.equal(privateFileResponse.status, 401);
   const ownerFileResponse = await fetch(`${baseUrl}/api/courses/${course.id}/files/${files[0].id}`, {
@@ -106,9 +105,9 @@ test('trainers upload PDF notes and videos and retrieve saved lesson files', asy
   });
   assert.equal(ownerFileResponse.status, 200);
 
-  const lessons = attachments.map((attachment, index) => ({
-    title: attachment.kind === 'video' ? 'Video lesson' : 'PDF notes',
-    type: attachment.kind === 'video' ? 'Video' : 'Reading',
+  const lessons = attachments.map((_attachment, index) => ({
+    title: 'PDF notes',
+    type: 'Reading',
     duration: '8 min',
     file: files[index],
   }));
@@ -226,6 +225,15 @@ test('rejects unauthenticated, mismatched, and oversized file uploads', async ()
     body: form,
   });
   assert.equal(mismatchedResponse.status, 415);
+
+  const legacyVideoForm = new FormData();
+  legacyVideoForm.append('file', new Blob(['video bytes'], { type: 'video/mp4' }), 'lesson.mp4');
+  const legacyVideoResponse = await fetch(`${baseUrl}/api/courses/${course.id}/uploads`, {
+    method: 'POST',
+    headers: { Authorization: ['Bearer', token].join(' '), 'X-Upload-Kind': 'video' },
+    body: legacyVideoForm,
+  });
+  assert.equal(legacyVideoResponse.status, 410);
 
   const oversizedForm = new FormData();
   oversizedForm.append('file', new Blob([new Uint8Array(25 * 1024 * 1024 + 1)], { type: 'application/pdf' }), 'large.pdf');

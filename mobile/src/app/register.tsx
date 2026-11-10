@@ -76,12 +76,12 @@ export default function RegisterScreen() {
 
   if (step === 2) {
       return (
-        <View className="flex-1 bg-agrilearn-light">
-          <View className="flex-row items-center gap-3 px-5 pt-14">
+        <ScrollView className="flex-1 bg-agrilearn-light" contentContainerClassName="pb-6">
+          <View className="flex-row items-center gap-3 px-5 pt-4">
             <Pressable onPress={() => setStep(1)} className="h-11 w-11 items-center justify-center rounded-[14px] border border-[#DDE4DC] bg-white"><Text className="text-xl text-[#103D2B]">‹</Text></Pressable>
             <View className="flex-1"><Text className="text-lg font-extrabold text-[#103D2B]">How do you work in agriculture?</Text><Text className="mt-1 text-xs text-[#717A74]">This helps us personalise your learning.</Text></View>
           </View>
-          <View className="gap-3 px-5 pt-8">
+          <View className="gap-3 px-5 pt-6">
             {[
               ['Farmer', 'I manage or work my own farm', '♧'],
               ['Agricultural worker', 'I work in the agriculture sector', '▢'],
@@ -116,14 +116,14 @@ export default function RegisterScreen() {
             ))}
           </View>
           <Text className="mt-6 px-5 text-center text-[10px] leading-4 text-[#717A74]">ⓘ You can change this later in your profile.</Text>
-        </View>
+        </ScrollView>
       );
   }
 
   if (step === 3) {
       return (
         <ScrollView className="flex-1 bg-agrilearn-light" contentContainerClassName="px-5 pb-10">
-          <View className="flex-row items-center gap-3 pt-14">
+          <View className="flex-row items-center gap-3 pt-4">
             <Pressable onPress={() => setStep(2)} className="h-11 w-11 items-center justify-center rounded-[14px] border border-[#DDE4DC] bg-white"><Text className="text-xl text-[#103D2B]">‹</Text></Pressable>
             <View><Text className="text-xl font-extrabold text-[#103D2B]">Tell us about yourself</Text><Text className="mt-1 text-xs text-[#717A74]">Just the essentials to get you started.</Text></View>
           </View>
@@ -177,7 +177,7 @@ export default function RegisterScreen() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-agrilearn-light" contentContainerClassName="px-6 pb-10 pt-16">
+    <ScrollView className="flex-1 bg-agrilearn-light" contentContainerClassName="px-6 pb-10 pt-6">
       <View className="mb-8 flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
           <View className="h-[34px] w-[34px] items-center justify-center rounded-[12px] bg-agrilearn-green"><Text className="text-lg text-white">◒</Text></View>

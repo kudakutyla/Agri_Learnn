@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ImageBackground, Linking, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { useEvent } from 'expo';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { courses as sampleCourses } from '../data';
 import { API_URL, api, Course } from '../services/api';
@@ -12,6 +13,11 @@ const courseImages = [
   'https://images.unsplash.com/photo-1506349103253-e648563ec8b9?auto=format&fit=crop&w=900&q=85',
   'https://images.unsplash.com/photo-1492496913980-501348b61469?auto=format&fit=crop&w=900&q=85',
 ];
+
+function formatDuration(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+}
 
 function sampleCourseById(id: string): Course | undefined {
   const sample = sampleCourses.find((item) => item.id === id);
@@ -40,9 +46,10 @@ function LessonVideo({ uri, title }: { uri: string; title: string }) {
   const player = useVideoPlayer({ uri }, (videoPlayer) => {
     videoPlayer.loop = false;
   });
+  const playback = useEvent(player, 'statusChange', { status: player.status });
 
   return (
-    <View className="mt-3 overflow-hidden rounded-2xl bg-[#17261E]">
+    <View className="relative mt-3 overflow-hidden rounded-2xl bg-[#17261E]">
       <VideoView
         player={player}
         nativeControls
@@ -50,6 +57,20 @@ function LessonVideo({ uri, title }: { uri: string; title: string }) {
         accessibilityLabel={title}
         style={{ width: '100%', aspectRatio: 16 / 9 }}
       />
+      {playback.status === 'loading' ? (
+        <View className="absolute inset-0 items-center justify-center bg-[#17261E]/80">
+          <ActivityIndicator color="white" />
+          <Text className="mt-2 text-[9px] font-semibold text-white">Loading video…</Text>
+        </View>
+      ) : null}
+      {playback.status === 'error' ? (
+        <View className="absolute inset-0 items-center justify-center bg-[#17261E]/90 px-5">
+          <Text className="text-center text-[10px] font-bold text-white">Video playback failed</Text>
+          <Text numberOfLines={2} className="mt-1 text-center text-[8px] text-white/75">
+            {playback.error?.message ?? 'Check your connection and try again.'}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -59,6 +80,7 @@ export default function CourseContentScreen() {
   const [course, setCourse] = useState<Course | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [videoPlayback, setVideoPlayback] = useState<{ videoId: string; url?: string; error?: string } | null>(null);
   const [selectedLesson, setSelectedLesson] = useState(0);
   const [offlineVideoUri, setOfflineVideoUri] = useState<string | null>(null);
   const [isVideoDownloaded, setIsVideoDownloaded] = useState(false);
@@ -74,6 +96,12 @@ export default function CourseContentScreen() {
         const match = result.courses.find((item) => item.id === courseId);
         if (active && match) {
           setCourse(match);
+          try {
+            const progress = await api.courses.lessons.progress(match.id);
+            if (active) setSelectedLesson(progress.nextLessonIndex);
+          } catch (progressError) {
+            if (active) setError(progressError instanceof Error ? progressError.message : 'Could not load saved learning progress.');
+          }
           try {
             await saveCourseForOffline(match);
           } catch (cacheError) {
@@ -117,10 +145,13 @@ export default function CourseContentScreen() {
   const lessons = course?.lessons ?? [];
   const lesson = lessons[selectedLesson];
   const videoFile = lesson?.type === 'Video' ? lesson.file : undefined;
+  const videoFileId = videoFile?.id;
+  const currentVideoPlayback = videoPlayback?.videoId === videoFileId ? videoPlayback : null;
+  const playbackUrl = currentVideoPlayback?.url ?? '';
+  const playbackError = currentVideoPlayback?.error ?? '';
+  const playbackLoading = Boolean(videoFileId && !currentVideoPlayback);
   const pdfFile = lesson?.type === 'Reading' ? lesson.file : undefined;
-  const videoUri = videoFile
-    ? `${API_URL}/api/courses/${encodeURIComponent(course?.id ?? '')}/files/${encodeURIComponent(videoFile.id)}`
-    : undefined;
+  const videoUri = playbackUrl || undefined;
   const activeVideoUri = offlineVideoUri ?? videoUri;
   const pdfUri = pdfFile
     ? `${API_URL}/api/courses/${encodeURIComponent(course?.id ?? '')}/files/${encodeURIComponent(pdfFile.id)}`
@@ -132,6 +163,22 @@ export default function CourseContentScreen() {
   const isFirstLesson = selectedLesson === 0;
   const isLastLesson = selectedLesson >= lessons.length - 1;
   const progress = lessons.length ? ((selectedLesson + 1) / lessons.length) * 100 : 0;
+
+  useEffect(() => {
+    let active = true;
+    if (!videoFileId) return () => { active = false; };
+    void api.videos.playbackUrl(videoFileId)
+      .then(({ url }) => {
+        if (active) setVideoPlayback({ videoId: videoFileId, url });
+      })
+      .catch((playbackLoadError: unknown) => {
+        if (active) setVideoPlayback({
+          videoId: videoFileId,
+          error: playbackLoadError instanceof Error ? playbackLoadError.message : 'Could not load the secure video stream.',
+        });
+      });
+    return () => { active = false; };
+  }, [videoFileId]);
 
   useEffect(() => {
     let active = true;
@@ -204,26 +251,32 @@ export default function CourseContentScreen() {
   }
 
   async function downloadVideoForOffline() {
-    if (!course || !videoFile || !videoUri || downloadingVideo) return;
+    if (!course || !videoFile || downloadingVideo) return;
     if (Platform.OS === 'web') {
-      const link = document.createElement('a');
-      link.href = `${videoUri}?download=1`;
-      link.download = videoFile.name;
-      link.rel = 'noopener';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      try {
+        const { url } = await api.videos.playbackUrl(videoFile.id, true);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = videoFile.name;
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } catch (downloadError) {
+        setError(downloadError instanceof Error ? downloadError.message : 'Could not download the video.');
+      }
       return;
     }
 
     setDownloadingVideo(true);
     setDownloadProgress(0);
     try {
+      const { url } = await api.videos.playbackUrl(videoFile.id, true);
       const downloadedFile = await downloadOfflineVideo(
         course,
         videoFile.id,
         videoFile.mimeType,
-        videoUri,
+        url,
         setDownloadProgress,
       );
       setOfflineVideoUri(downloadedFile.uri);
@@ -293,7 +346,7 @@ export default function CourseContentScreen() {
                 Lesson {selectedLesson + 1} of {lessons.length}
               </Text>
               <Text className="text-[8px] font-bold uppercase tracking-[0.7px] text-[#59846A]">
-                ◷  About {lesson.duration}
+                ◷  {videoFile?.durationSeconds ? formatDuration(videoFile.durationSeconds) : `About ${lesson.duration}`}
               </Text>
             </View>
 
@@ -301,13 +354,26 @@ export default function CourseContentScreen() {
               {lesson.title}
             </Text>
 
-            {videoUri ? (
+            {videoFile ? (
               <>
-                <LessonVideo key={activeVideoUri} uri={activeVideoUri ?? videoUri} title={lesson.title} />
+                {playbackLoading && !offlineVideoUri ? (
+                  <View className="mt-3 items-center justify-center rounded-2xl bg-[#17261E] py-10">
+                    <ActivityIndicator color="white" />
+                    <Text className="mt-2 text-[9px] text-white">Preparing secure video…</Text>
+                  </View>
+                ) : null}
+                {playbackError && !offlineVideoUri ? (
+                  <Text accessibilityRole="alert" className="mt-3 rounded-xl bg-[#FBE9E7] p-3 text-center text-[9px] leading-4 text-[#9A382C]">
+                    {playbackError}
+                  </Text>
+                ) : null}
+                {activeVideoUri && (!playbackLoading || offlineVideoUri) ? (
+                  <LessonVideo key={activeVideoUri} uri={activeVideoUri} title={lesson.title} />
+                ) : null}
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityState={{ disabled: isVideoDownloaded || downloadingVideo }}
-                  disabled={isVideoDownloaded || downloadingVideo}
+                  accessibilityState={{ disabled: isVideoDownloaded || downloadingVideo || playbackLoading }}
+                  disabled={isVideoDownloaded || downloadingVideo || playbackLoading}
                   onPress={() => { void downloadVideoForOffline(); }}
                   className={`mt-3 h-10 flex-row items-center justify-center rounded-xl border border-[#DDE4DC] bg-white ${downloadingVideo || isVideoDownloaded ? 'opacity-75' : ''}`}
                 >

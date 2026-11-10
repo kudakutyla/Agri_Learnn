@@ -94,7 +94,7 @@ export default function HomeContent() {
   return (
     <View className="flex-1 bg-[#F7F8F4] dark:bg-[#101814]">
     <ScrollView className="flex-1" contentContainerClassName="pb-24">
-      <View className="bg-[#0B5543] px-5 pb-7 pt-14">
+      <View className="bg-[#0B5543] px-5 pb-7 pt-5">
         <View className="flex-row items-center justify-between">
           <View className="flex-row items-center gap-2">
             <Text className="text-xl text-white">♧</Text>

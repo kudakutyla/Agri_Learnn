@@ -32,9 +32,9 @@ Use this document to validate AgriLearn during development and acceptance testin
 | AUTH-001 | Users can register with valid details. | Registration creates one persistent user and reports duplicate/invalid input clearly. | Implemented |
 | AUTH-002 | Users can log in with valid credentials. | Valid credentials return an authenticated session; learners and employers land on Home, trainers on their course dashboard, and admins on the admin overview. | Implemented |
 | AUTH-003 | Invalid credentials are rejected. | Invalid login does not create a session and displays a safe error. | Implemented |
-| AUTH-004 | Users can log out. | Logout removes locally stored authentication state and protected API access. | Implemented |
+| AUTH-004 | Users can log out. | Logout removes locally stored authentication state and protected API access, then returns users to the landing page. | Implemented |
 | AUTH-005 | Authentication persists across app restarts. | A valid active session restores the correct authenticated state until expiry/logout. | Implemented |
-| AUTH-006 | Password recovery is available when configured. | Recovery submission validates the account and uses a secure reset flow without exposing account existence unexpectedly. | Not started |
+| AUTH-006 | Users can reset forgotten passwords by email. | Recovery sends a single-use, one-hour reset link without revealing whether an email is registered; the reset form requires matching new passwords, and the new password is accepted at login. | Implemented |
 | AUTH-007 | Backend role authorization is enforced. | An authenticated user cannot call endpoints permitted only to another role. | Verified |
 | AUTH-008 | Protected screens recover cleanly when no valid session exists. | A protected API 401 clears saved session data, redirects to login, and explains that sign-in is required; expired sessions show a distinct message. | Implemented |
 
@@ -110,6 +110,18 @@ Use this document to validate AgriLearn during development and acceptance testin
 | QUA-001 | Automated checks pass. | Mobile lint/typecheck and relevant backend tests pass. | Verified |
 | QUA-002 | The app starts without runtime configuration errors. | Expo and backend can start with documented local environment values. | Verified |
 | QUA-003 | Errors are handled visibly and logged safely. | User-facing errors do not expose stack traces or secrets; server errors are logged. | Not started |
+
+### Cloud Video Storage
+
+| ID | Requirement | Test/Acceptance Criteria | Status |
+|---|---|---|---|
+| VID-001 | Authorized trainers upload MP4/MOV lesson videos to private Cloudflare R2. | Backend checks role, ownership, extension, MIME, size, and MP4/MOV container signature; bytes upload directly to R2 using short-lived signed URLs. | Implemented |
+| VID-002 | Large video uploads use multipart transfer with progress. | Files at or above the configured threshold use signed part uploads, part completion verification, and visible mobile progress; upload failures do not mark a video ready. | Implemented |
+| VID-003 | Video metadata persists separately from the video binary. | JSON metadata stores a generated object key, course/lesson association, uploader, MIME type, size, optional duration, status, and timestamps; no permanent signed URL or binary is stored. The current JSON-database limitation is documented. | Implemented |
+| VID-004 | Learners play only videos for lessons they may access. | Fresh five-minute signed playback URLs are issued only for videos still attached to lessons in approved courses; learners must be enrolled. Missing/deleted objects and unauthorized access are reported safely. | Implemented |
+| VID-005 | Trainers and administrators manage lesson videos. | Trainers list, preview, replace, and delete permitted course videos; administrators list status and association and can remove/clean up records. | Implemented |
+| VID-006 | Mobile playback supports native controls and resume. | Expo Video provides native play/pause and seeking, visible loading/buffering and playback errors, duration when present, and the next incomplete lesson is loaded from saved progress. | Implemented |
+| VID-007 | Real R2 integration is verified with development credentials. | Complete a real single PUT, multipart transfer, authorized preview/learner streaming, replacement, deletion, and unauthorized access test on configured R2 and supported mobile devices. | Not started |
 
 ## Manual Validation Procedure
 

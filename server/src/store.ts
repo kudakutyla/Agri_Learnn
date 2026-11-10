@@ -19,8 +19,10 @@ export type Database = {
   progress: Record<string, unknown>[];
   certificates: Record<string, unknown>[];
   courseReviews: Record<string, unknown>[];
+  passwordResets: Record<string, unknown>[];
+  videos: Record<string, unknown>[];
 };
-const initial: Database = { users: [], courses: [], jobs: [], applications: [], invitations: [], categories: [], assessments: [], attempts: [], progress: [], certificates: [], courseReviews: [] };
+const initial: Database = { users: [], courses: [], jobs: [], applications: [], invitations: [], categories: [], assessments: [], attempts: [], progress: [], certificates: [], courseReviews: [], passwordResets: [], videos: [] };
 
 function load(): Database {
   if (!existsSync(file)) return structuredClone(initial);
@@ -38,6 +40,13 @@ export const store = {
     const database = load();
     const record = { ...input, id: randomUUID(), createdAt: new Date().toISOString() };
     database[resource].push(record);
+    save(database);
+    return record;
+  },
+  createVideo(id: string, input: Record<string, unknown>) {
+    const database = load();
+    const record = { ...input, id, createdAt: new Date().toISOString() };
+    database.videos.push(record);
     save(database);
     return record;
   },
@@ -80,6 +89,23 @@ export const store = {
     database.courseReviews.push(review);
     save(database);
     return { course, review };
+  },
+  resetPassword(tokenHash: string, passwordHash: string) {
+    const database = load();
+    const reset = database.passwordResets.find((record) => record.tokenHash === tokenHash);
+    const expiresAt = typeof reset?.expiresAt === 'string' ? Date.parse(reset.expiresAt) : Number.NaN;
+    if (!reset || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+    const user = database.users.find((candidate) => candidate.id === reset.userId);
+    if (!user) return false;
+    user.passwordHash = passwordHash;
+    database.passwordResets = database.passwordResets.filter((record) => record.userId !== user.id);
+    save(database);
+    return true;
+  },
+  hasValidPasswordReset(tokenHash: string) {
+    const reset = load().passwordResets.find((record) => record.tokenHash === tokenHash);
+    const expiresAt = typeof reset?.expiresAt === 'string' ? Date.parse(reset.expiresAt) : Number.NaN;
+    return Boolean(reset && Number.isFinite(expiresAt) && expiresAt > Date.now());
   },
   users: {
     all(): User[] {

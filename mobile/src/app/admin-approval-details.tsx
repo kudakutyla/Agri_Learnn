@@ -1,7 +1,8 @@
-import { createElement, useEffect, useMemo, useState } from 'react';
+import { createElement, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { File, Paths } from 'expo-file-system';
+import { useEvent } from 'expo';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { AdminBottomNav } from '../components/AdminBottomNav';
 import { API_URL, api, type AdminApprovalCourse, type CourseAssessment, type CourseFile } from '../services/api';
@@ -250,12 +251,7 @@ export default function AdminApprovalDetailsScreen() {
                       {lessonTitle ? `Lesson: ${lessonTitle} · ` : ''}{file.mimeType} · {(file.size / (1024 * 1024)).toFixed(1)} MB
                     </Text>
                     {isVideo && adminToken ? (
-                      <UploadedVideo
-                        key={file.id}
-                        uri={`${API_URL}/api/courses/${encodeURIComponent(course.id)}/files/${encodeURIComponent(file.id)}`}
-                        token={adminToken}
-                        title={lessonTitle ?? file.name}
-                      />
+                          <SecureUploadedVideo key={file.id} videoId={file.id} title={lessonTitle ?? file.name} />
                     ) : isPdf ? (
                       <Pressable
                         accessibilityRole="button"
@@ -377,42 +373,27 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
   );
 }
 
-function UploadedVideo({ uri, token, title }: { uri: string; token: string; title: string }) {
-  const [playableUri, setPlayableUri] = useState<string | null>(Platform.OS === 'web' ? null : uri);
+function SecureUploadedVideo({ videoId, title }: { videoId: string; title: string }) {
+  const [uri, setUri] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const source = useMemo(
-    () => Platform.OS === 'web'
-      ? playableUri
-      : { uri, headers: { Authorization: `Bearer ${token}` } },
-    [playableUri, token, uri],
-  );
-  const player = useVideoPlayer(source);
+  const player = useVideoPlayer(uri);
+  const playback = useEvent(player, 'statusChange', { status: player.status });
 
   useEffect(() => {
-    if (Platform.OS !== 'web') return;
     let active = true;
-    let objectUrl: string | null = null;
-
-    void fetch(uri, { headers: { Authorization: `Bearer ${token}` } })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`Could not load video (${response.status}).`);
-        objectUrl = URL.createObjectURL(await response.blob());
-        if (active) setPlayableUri(objectUrl);
-        else URL.revokeObjectURL(objectUrl);
+    void api.videos.playbackUrl(videoId)
+      .then(({ url }) => {
+        if (active) setUri(url);
       })
       .catch((loadError: unknown) => {
         if (active) setError(loadError instanceof Error ? loadError.message : 'Could not load this video.');
       });
-
-    return () => {
-      active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [token, uri]);
+    return () => { active = false; };
+  }, [videoId]);
 
   return (
-    <View className="mt-3 overflow-hidden rounded-xl bg-[#17261E]">
-      {playableUri || Platform.OS !== 'web' ? (
+    <View className="relative mt-3 overflow-hidden rounded-xl bg-[#17261E]">
+      {uri ? (
         <VideoView
           player={player}
           nativeControls
@@ -421,17 +402,28 @@ function UploadedVideo({ uri, token, title }: { uri: string; token: string; titl
           style={{ width: '100%', aspectRatio: 16 / 9 }}
         />
       ) : (
-        <View className="h-48 items-center justify-center">
+        <View className="h-48 items-center justify-center px-4">
           {error ? (
-            <Text accessibilityRole="alert" className="px-4 text-center text-xs text-white">{error}</Text>
+            <Text accessibilityRole="alert" className="text-center text-xs text-white">{error}</Text>
           ) : (
             <>
               <ActivityIndicator color="#FFFFFF" />
-              <Text className="mt-2 text-xs text-white">Loading video…</Text>
+              <Text className="mt-2 text-xs text-white">Preparing secure video preview…</Text>
             </>
           )}
         </View>
       )}
+      {playback.status === 'loading' ? (
+        <View className="absolute inset-0 items-center justify-center bg-[#17261E]/70">
+          <ActivityIndicator color="white" />
+          <Text className="mt-2 text-[9px] text-white">Buffering…</Text>
+        </View>
+      ) : null}
+      {playback.status === 'error' ? (
+        <Text accessibilityRole="alert" className="absolute inset-0 bg-[#17261E]/90 px-4 py-8 text-center text-xs text-white">
+          {playback.error?.message ?? 'Video playback failed.'}
+        </Text>
+      ) : null}
     </View>
   );
 }

@@ -104,7 +104,7 @@ export default function ProfileEditScreen() {
 
   return (
     <View className="flex-1 bg-[#F7F7F2] dark:bg-[#101814]">
-      <View className="flex-row items-center gap-3 px-5 pb-4 pt-14">
+      <View className="flex-row items-center gap-3 px-5 pb-4 pt-4">
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Go back"

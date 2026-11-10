@@ -5,10 +5,20 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { api, CourseAssessmentQuestion, CourseLesson, LocalUploadFile } from '../services/api';
 import { getStorageItem } from '../services/storage';
+import { uploadVideo } from '../services/videoStorage';
 
 const categories = ['Crop Production', 'Soil Management', 'Climate-Smart Agriculture'];
-const maxVideoBytes = 200 * 1024 * 1024;
 const maxPdfBytes = 25 * 1024 * 1024;
+
+function durationInSeconds(value: string) {
+  const clock = value.trim().match(/^(?:(\d{1,2}):)?(\d{1,2}):([0-5]\d)$/);
+  if (clock) return Number(clock[1] ?? 0) * 3600 + Number(clock[2]) * 60 + Number(clock[3]);
+  const amount = value.trim().match(/^(\d+(?:\.\d+)?)\s*(s|sec(?:onds?)?|m|min(?:utes?)?|h|hr|hours?)$/i);
+  if (!amount) return undefined;
+  const count = Number(amount[1]);
+  const unit = amount[2]?.toLowerCase() ?? '';
+  return Math.round(count * (unit.startsWith('h') ? 3600 : unit.startsWith('m') ? 60 : 1));
+}
 
 function StepProgress({ step }: { step: number }) {
   return (
@@ -56,6 +66,7 @@ export default function CreateModuleScreen() {
   const [lessonFile, setLessonFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [addingLesson, setAddingLesson] = useState(false);
   const [uploadingLesson, setUploadingLesson] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -188,16 +199,15 @@ export default function CreateModuleScreen() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: lessonType === 'Video'
-          ? ['video/mp4', 'video/quicktime', 'video/x-m4v', 'video/webm']
+          ? ['video/mp4', 'video/quicktime']
           : 'application/pdf',
         copyToCacheDirectory: true,
         multiple: false,
       });
       if (result.canceled) return;
       const file = result.assets[0];
-      const maxBytes = lessonType === 'Video' ? maxVideoBytes : maxPdfBytes;
-      if (file.size !== undefined && file.size > maxBytes) {
-        setErrorMessage(lessonType === 'Video' ? 'Choose a video that is 200 MB or smaller.' : 'Choose PDF notes that are 25 MB or smaller.');
+      if (lessonType === 'Reading' && file.size !== undefined && file.size > maxPdfBytes) {
+        setErrorMessage('Choose PDF notes that are 25 MB or smaller.');
         return;
       }
       setLessonFile(file);
@@ -213,18 +223,24 @@ export default function CreateModuleScreen() {
     }
     setErrorMessage('');
     setUploadingLesson(true);
+    setUploadProgress(0);
     try {
       let file: CourseLesson['file'];
       if (lessonFile) {
         if (!moduleId) throw new Error('Save the module details before uploading lesson files.');
-        const kind = lessonType === 'Video' ? 'video' : 'pdf';
-        const result = await api.courses.uploadLessonFile(moduleId, kind, {
+        const selectedFile = {
           uri: lessonFile.uri,
           name: lessonFile.name,
           mimeType: lessonFile.mimeType,
+          size: lessonFile.size,
+          durationSeconds: durationInSeconds(lessonDuration),
           file: lessonFile.file,
-        } satisfies LocalUploadFile);
-        file = result.file;
+        } satisfies LocalUploadFile;
+        if (lessonType === 'Video') {
+          file = await uploadVideo(moduleId, lessons.length, selectedFile, setUploadProgress);
+        } else {
+          file = (await api.courses.uploadLessonFile(moduleId, 'pdf', selectedFile)).file;
+        }
       }
       setLessons((current) => [...current, {
         title: lessonTitle.trim(),
@@ -241,6 +257,19 @@ export default function CreateModuleScreen() {
     } finally {
       setUploadingLesson(false);
     }
+  }
+
+  async function removeLesson(index: number) {
+    const file = lessons[index]?.file;
+    if (file?.mimeType.startsWith('video/')) {
+      try {
+        await api.videos.remove(file.id);
+      } catch (removeError) {
+        setErrorMessage(removeError instanceof Error ? removeError.message : 'Could not remove the lesson video.');
+        return;
+      }
+    }
+    setLessons((current) => current.filter((_, itemIndex) => itemIndex !== index));
   }
 
   async function saveDraftContent() {
@@ -486,7 +515,7 @@ export default function CreateModuleScreen() {
                 <Text className="mt-1 text-[9px] text-[#717A74]">{lesson.type} · {lesson.duration}</Text>
                 {lesson.file && <Text numberOfLines={1} className="mt-1 text-[9px] text-[#14543E]">{lesson.file.name}</Text>}
               </View>
-              <Pressable onPress={() => setLessons((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Text className="px-2 text-base text-[#9A5147]">×</Text></Pressable>
+              <Pressable onPress={() => { void removeLesson(index); }}><Text className="px-2 text-base text-[#9A5147]">×</Text></Pressable>
             </View>
           ))}
           {addingLesson ? (
@@ -502,14 +531,14 @@ export default function CreateModuleScreen() {
               </View>
               <Pressable disabled={uploadingLesson} onPress={pickLessonFile} className="items-center rounded-lg border border-dashed border-[#A9C6AE] bg-[#F7FAF6] px-3 py-3">
                 <Text numberOfLines={1} className="text-xs font-bold text-[#14543E]">
-                  {lessonFile?.name ?? (lessonType === 'Video' ? 'Attach video (MP4, MOV, M4V, WebM)' : 'Attach PDF notes')}
+                  {lessonFile?.name ?? (lessonType === 'Video' ? 'Attach video (MP4 or MOV)' : 'Attach PDF notes')}
                 </Text>
                 <Text className="mt-1 text-[9px] text-[#717A74]">
-                  {lessonFile ? 'Tap to choose a different file' : lessonType === 'Video' ? 'Up to 200 MB' : 'PDF · Up to 25 MB'}
+                  {lessonFile ? 'Tap to choose a different file' : lessonType === 'Video' ? 'Uploads directly to secure cloud storage' : 'PDF · Up to 25 MB'}
                 </Text>
               </Pressable>
               <Pressable disabled={uploadingLesson} onPress={addLesson} className={`items-center rounded-lg bg-[#14543E] py-3 ${uploadingLesson ? 'opacity-60' : ''}`}>
-                <Text className="font-bold text-white">{uploadingLesson ? 'Uploading…' : 'Save lesson'}</Text>
+                <Text className="font-bold text-white">{uploadingLesson ? `Uploading… ${uploadProgress}%` : 'Save lesson'}</Text>
               </Pressable>
             </View>
           ) : (

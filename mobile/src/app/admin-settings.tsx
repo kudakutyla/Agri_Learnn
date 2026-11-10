@@ -78,7 +78,7 @@ export default function AdminSettingsScreen() {
         deleteStorageItem('agrilearn_user_id'),
       ]);
       setDialog(null);
-      router.replace('/login');
+      router.replace('/');
     } catch (signOutError) {
       setError(signOutError instanceof Error ? signOutError.message : 'Could not sign out. Please try again.');
       setDialog(null);

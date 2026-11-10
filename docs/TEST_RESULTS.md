@@ -1,5 +1,33 @@
 # AgriLearn Test Results
 
+## Cloudflare R2 Video Storage Integration
+
+| Check | Result | Evidence |
+|---|---|---|
+| Backend build | Passed | `server` `npm run build` |
+| Backend tests | Passed | `server` `npm test`: 26/26 passed |
+| Local R2 environment loading | Passed | Backend loads `server/.env` via `dotenv/config`; verified against the empty-placeholder `.env.example` |
+| Mobile typecheck | Passed | `mobile` `npx tsc --noEmit` |
+| Mobile lint | Passed | `mobile` `npx expo lint` |
+| Expo Doctor | Passed | `mobile` `npx expo-doctor`: 20/20 checks |
+| Live R2 upload and playback | Not run | No R2 credentials were configured in the process environment or `server/.env`; see [VIDEO_UPLOAD_TESTS.md](./VIDEO_UPLOAD_TESTS.md) for the real-R2 acceptance checklist |
+
+## 2026-11-10 — Trainer Module and Video Upload Attempt
+
+| Check | Result | Evidence |
+|---|---|---|
+| Trainer registration | Passed | Registered a trainer through the app and reached the trainer dashboard |
+| Module creation | Passed | Saved a new draft module through the trainer workflow |
+| Lesson video upload | Blocked | Selected the existing local MP4; the app received HTTP 503 with “Cloud video storage is not configured.” No video record or R2 object was created |
+| Learner enrollment and playback | Not run | The video-less draft is not published; R2 configuration and the normal review/publication flow are prerequisites |
+
+## 2026-11-06 — Logout Landing Page
+
+| Check | Result | Evidence |
+|---|---|---|
+| Profile and admin logout | Passed | Both flows clear saved authentication state and replace the route with `/`, the welcome landing screen |
+| Mobile checks | Passed | TypeScript typecheck and lint passed |
+
 ## 2026-11-06 — Post-Login Home Routing
 
 | Check | Result | Evidence |

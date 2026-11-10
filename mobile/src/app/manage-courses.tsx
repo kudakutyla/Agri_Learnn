@@ -86,6 +86,13 @@ export default function ManageCoursesScreen() {
             <Text className="mr-2 text-xl text-[#2D4A3D]">＋</Text>
             <Text className="font-extrabold text-[#2D4A3D]">Create new module</Text>
           </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('/trainer-videos')}
+            className="mt-2 h-11 flex-row items-center justify-center rounded-xl border border-[#DDE4DC] bg-white"
+          >
+            <Text className="text-xs font-bold text-[#14543E]">Manage lesson videos</Text>
+          </Pressable>
 
           {errorMessage ? (
             <Text accessibilityRole="alert" className="mt-4 rounded-xl bg-[#FBE9E7] p-4 text-xs leading-5 text-[#9A382C]">

@@ -125,6 +125,22 @@ export default function AdminScreen() {
             <Text className="ml-2 text-lg text-[#9A7330]">›</Text>
           </Pressable>
 
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Manage uploaded lesson videos"
+            onPress={() => router.push('/admin-videos')}
+            className="mt-2 flex-row items-center rounded-xl border border-[#DDE4DC] bg-white px-3 py-3"
+          >
+            <View className="mr-3 h-9 w-9 items-center justify-center rounded-lg bg-[#E8F0E7]">
+              <Text className="text-base text-[#39785C]">▶</Text>
+            </View>
+            <View className="flex-1">
+              <Text className="text-[11px] font-extrabold text-[#252B27]">Manage lesson videos</Text>
+              <Text className="mt-1 text-[8px] leading-3 text-[#717A74]">Review upload status and remove outdated or abandoned objects</Text>
+            </View>
+            <Text className="ml-2 text-lg text-[#5B645E]">›</Text>
+          </Pressable>
+
           <View className="mt-5 flex-row items-center justify-between">
             <Text className="text-[15px] font-extrabold text-[#252B27]">Learner growth</Text>
             <Text className="text-[9px] font-semibold text-[#477E62]">Last 6 months</Text>

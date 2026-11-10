@@ -109,7 +109,7 @@ export default function ProfileContent() {
         deleteStorageItem('agrilearn_name'),
         deleteStorageItem('agrilearn_user_id'),
       ]);
-      router.replace('/login');
+      router.replace('/');
     } catch (error) {
       setDialog({
         title: 'Could not sign out',

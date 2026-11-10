@@ -51,6 +51,10 @@ export const api = {
     request<{ user: Profile; token: string }>('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: { email: string; password: string }) =>
     request<{ user: Profile; token: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+  requestPasswordReset: (data: { email: string }) =>
+    request<{ message: string }>('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify(data) }),
+  resetPassword: (data: { token: string; newPassword: string; confirmPassword: string }) =>
+    request<{ message: string }>('/api/auth/reset-password', { method: 'POST', body: JSON.stringify(data) }),
   profile: {
     get: () => request<{ user: Profile }>('/api/me'),
     update: (data: ProfileUpdate) =>
@@ -63,6 +67,9 @@ export const api = {
     overview: () => request<AdminOverview>('/api/admin/overview'),
     reports: () => request<AdminReports>('/api/admin/reports'),
     users: () => request<{ users: Profile[] }>('/api/admin/users'),
+    videos: () => request<{ videos: VideoRecord[] }>('/api/admin/videos'),
+    removeVideo: (videoId: string) =>
+      request<void>(`/api/videos/${encodeURIComponent(videoId)}`, { method: 'DELETE' }),
     approvals: () => request<{ courses: AdminApprovalCourse[] }>('/api/admin/approvals'),
     reviewCourse: (courseId: string, data: { status: 'approved' | 'rejected'; note?: string }) =>
       request<{ course: AdminApprovalCourse; review: CourseReview }>(`/api/admin/approvals/${courseId}`, {
@@ -74,13 +81,45 @@ export const api = {
     courses: {
       list: () => request<{ courses: Course[] }>('/api/trainer/courses'),
     },
+    videos: {
+      list: () => request<{ videos: VideoRecord[] }>('/api/trainer/videos'),
+    },
+  },
+  videos: {
+    beginUpload: (courseId: string, data: {
+      lessonIndex: number;
+      fileName: string;
+      mimeType: string;
+      fileSize: number;
+      durationSeconds?: number;
+    }) =>
+      request<VideoUploadStart>(`/api/courses/${encodeURIComponent(courseId)}/videos/uploads`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    partUploadUrl: (videoId: string, partNumber: number) =>
+      request<{ url: string; expiresInSeconds: number }>(
+        `/api/videos/${encodeURIComponent(videoId)}/parts/${partNumber}/upload-url`,
+        { method: 'POST' },
+      ),
+    completeUpload: (videoId: string, parts?: { partNumber: number; etag: string }[]) =>
+      request<{ video: VideoRecord; file: CourseFile }>(`/api/videos/${encodeURIComponent(videoId)}/complete`, {
+        method: 'POST',
+        body: JSON.stringify(parts ? { parts } : {}),
+      }),
+    playbackUrl: (videoId: string, download = false) =>
+      request<{ url: string; expiresInSeconds: number }>(
+        `/api/videos/${encodeURIComponent(videoId)}/playback-url${download ? '?download=1' : ''}`,
+      ),
+    remove: (videoId: string) =>
+      request<void>(`/api/videos/${encodeURIComponent(videoId)}`, { method: 'DELETE' }),
   },
   courses: {
     list: () => request<{ courses: Course[] }>('/api/courses'),
     listPublished: () => request<{ courses: Course[] }>('/api/courses?published=true'),
     create: (data: Omit<Course, 'id' | 'ownerId' | 'createdAt'>) =>
       request<{ course: Course }>('/api/courses', { method: 'POST', body: JSON.stringify(data) }),
-    uploadLessonFile: async (courseId: string, kind: 'video' | 'pdf', file: LocalUploadFile) => {
+    uploadLessonFile: async (courseId: string, kind: 'pdf', file: LocalUploadFile) => {
       const formData = new FormData();
       if (Platform.OS === 'web') {
         let content = file.file;
@@ -94,7 +133,7 @@ export const api = {
         formData.append('file', {
           uri: file.uri,
           name: file.name,
-          type: file.mimeType ?? (kind === 'pdf' ? 'application/pdf' : 'video/mp4'),
+          type: file.mimeType ?? 'application/pdf',
         } as unknown as Blob);
       }
       return request<{ file: CourseFile }>(`/api/courses/${courseId}/uploads`, {
@@ -121,6 +160,8 @@ export const api = {
     lessons: {
       enrol: (courseId: string) =>
         request<{ progress: CourseProgress; enrolled: boolean }>(`/api/courses/${courseId}/enrol`, { method: 'POST' }),
+      progress: (courseId: string) =>
+        request<{ completedLessons: number[]; nextLessonIndex: number }>(`/api/courses/${courseId}/progress`),
       complete: (courseId: string, lessonIndex: number) =>
         request<{ progress: CourseProgress; completed: boolean }>(
           `/api/courses/${courseId}/lessons/${lessonIndex}/complete`,
@@ -248,13 +289,39 @@ export type CourseFile = {
   name: string;
   mimeType: string;
   size: number;
+  durationSeconds?: number;
 };
 
 export type LocalUploadFile = {
   uri: string;
   name: string;
   mimeType?: string;
+  size?: number;
+  durationSeconds?: number;
   file?: Blob;
+};
+
+export type VideoRecord = {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  lessonIndex: number;
+  lessonTitle: string;
+  originalFileName: string;
+  mimeType: string;
+  fileSize: number;
+  durationSeconds?: number;
+  status: 'pending' | 'uploaded' | 'failed' | 'delete_failed';
+  uploadedBy: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type VideoUploadStart = {
+  video: VideoRecord;
+  upload:
+    | { type: 'single'; url: string; expiresInSeconds: number }
+    | { type: 'multipart'; partSizeBytes: number; expiresInSeconds: number };
 };
 
 export type Course = {
