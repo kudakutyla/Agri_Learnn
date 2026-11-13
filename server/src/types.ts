@@ -11,6 +11,7 @@ export type User = {
   province?: string;
   category?: string;
   primaryInterest?: string;
+  language?: string;
   createdAt: string;
 };
 

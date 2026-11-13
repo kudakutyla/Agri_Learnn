@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { AdminBottomNav } from '../components/AdminBottomNav';
+import { ThemePreferenceControl } from '../components/ThemePreferenceControl';
 import { api, type Profile } from '../services/api';
 import { deleteStorageItem } from '../services/storage';
 
@@ -87,17 +88,17 @@ export default function AdminSettingsScreen() {
   }
 
   return (
-    <View className="flex-1 bg-[#F7F7F2]">
+    <View className="flex-1 bg-[#F7F7F2] dark:bg-[#101814]">
       <ScrollView className="flex-1" contentContainerClassName="px-4 pb-6 pt-4">
         <View className="flex-row items-center justify-between">
-          <Text className="text-[22px] font-extrabold text-[#17261E]">Settings</Text>
-          <View className="h-9 w-9 items-center justify-center rounded-full border border-[#E1E5DF] bg-white">
+          <Text className="text-[22px] font-extrabold text-[#17261E] dark:text-[#F1F4F1]">Settings</Text>
+          <View className="h-9 w-9 items-center justify-center rounded-full border border-[#E1E5DF] bg-white dark:border-[#35443A] dark:bg-[#1D2922]">
             <Text className="text-sm text-[#14543E]">⚙</Text>
           </View>
         </View>
 
         {error ? (
-          <View className="mt-4 rounded-xl border border-[#F0D1C8] bg-white p-3">
+          <View className="mt-4 rounded-xl border border-[#F0D1C8] bg-white p-3 dark:bg-[#1D2922]">
             <Text accessibilityRole="alert" className="text-[10px] leading-4 text-[#9A382C]">{error}</Text>
             <Pressable
               accessibilityRole="button"
@@ -113,25 +114,25 @@ export default function AdminSettingsScreen() {
           <View className="h-[58px] w-[58px] items-center justify-center rounded-2xl bg-[#EAF1E8]">
             <Text className="text-[16px] font-extrabold text-[#14543E]">{profile ? initials(profile.name) : '—'}</Text>
           </View>
-          <Text className="mt-2 text-[15px] font-bold text-[#252B27]">
+          <Text className="mt-2 text-[15px] font-bold text-[#252B27] dark:text-[#F1F4F1]">
             {loading ? 'Loading profile…' : profile?.name ?? 'Profile unavailable'}
           </Text>
-          <Text className="mt-1 text-[9px] text-[#858C87]">
+          <Text className="mt-1 text-[9px] text-[#858C87] dark:text-[#AAB6AD]">
             {profile ? 'Platform Administrator' : loading ? '' : 'Administrator account'}
           </Text>
           <Pressable
             accessibilityRole="button"
             disabled={!profile || loading}
             onPress={() => router.push({ pathname: '/profile-edit', params: { returnTo: 'admin-settings' } })}
-            className="mt-3 h-9 flex-row items-center rounded-xl border border-[#E1E5DF] bg-white px-4"
+            className="mt-3 h-9 flex-row items-center rounded-xl border border-[#E1E5DF] bg-white px-4 dark:border-[#35443A] dark:bg-[#1D2922]"
           >
             <Text className="text-[10px] font-bold text-[#14543E]">Edit profile</Text>
             <Text className="ml-2 text-[10px] text-[#14543E]">✎</Text>
           </Pressable>
         </View>
 
-        <Text className="mb-1.5 mt-1 text-[8px] font-bold uppercase tracking-[1px] text-[#858C87]">Account</Text>
-        <View className="overflow-hidden rounded-xl border border-[#E5E8E2] bg-white">
+        <Text className="mb-1.5 mt-1 text-[8px] font-bold uppercase tracking-[1px] text-[#858C87] dark:text-[#AAB6AD]">Account</Text>
+        <View className="overflow-hidden rounded-xl border border-[#E5E8E2] bg-white dark:border-[#35443A] dark:bg-[#1D2922]">
           {settingsItems.map((item, index) => (
             <Pressable
               key={item.label}
@@ -140,21 +141,22 @@ export default function AdminSettingsScreen() {
               onPress={() => item.label === 'Personal information'
                 ? router.push({ pathname: '/profile-edit', params: { returnTo: 'admin-settings' } })
                 : openSettingsItem(item.label)}
-              className={`min-h-[49px] flex-row items-center px-3 ${index > 0 ? 'border-t border-[#EEF0EC]' : ''}`}
+              className={`min-h-[49px] flex-row items-center px-3 ${index > 0 ? 'border-t border-[#EEF0EC] dark:border-[#35443A]' : ''}`}
             >
               <Text className="w-7 text-[13px] text-[#14543E]">{item.icon}</Text>
               <View className="flex-1 py-2">
-                <Text className="text-[10px] font-medium text-[#343D37]">{item.label}</Text>
-                <Text className="mt-0.5 text-[8px] text-[#929992]">{item.detail}</Text>
+                <Text className="text-[10px] font-medium text-[#343D37] dark:text-[#E2EAE3]">{item.label}</Text>
+                <Text className="mt-0.5 text-[8px] text-[#929992] dark:text-[#AAB6AD]">{item.detail}</Text>
               </View>
               <Text className="ml-2 text-sm text-[#63806D]">›</Text>
             </Pressable>
           ))}
         </View>
 
-        <View className="mt-4 rounded-xl border border-[#E1E5DF] bg-white p-3">
-          <Text className="text-[9px] font-bold text-[#34483A]">Administrator access</Text>
-          <Text className="mt-1 text-[8px] leading-3 text-[#78817B]">
+        <ThemePreferenceControl />
+        <View className="mt-4 rounded-xl border border-[#E1E5DF] bg-white p-3 dark:border-[#35443A] dark:bg-[#1D2922]">
+          <Text className="text-[9px] font-bold text-[#34483A] dark:text-[#E2EAE3]">Administrator access</Text>
+          <Text className="mt-1 text-[8px] leading-3 text-[#78817B] dark:text-[#AAB6AD]">
             Your role is assigned to your account and cannot be changed from this screen.
           </Text>
         </View>
@@ -168,7 +170,7 @@ export default function AdminSettingsScreen() {
             confirmLabel: 'Sign out',
             action: 'sign-out',
           })}
-          className="mt-4 h-10 items-center justify-center rounded-xl bg-[#FBEFED]"
+          className="mt-4 h-10 items-center justify-center rounded-xl bg-[#FBEFED] dark:bg-[#3B2927]"
         >
           <Text className="text-[11px] font-bold text-[#A34F46]">{signingOut ? 'Signing out…' : 'Sign out'}</Text>
         </Pressable>
@@ -185,9 +187,9 @@ export default function AdminSettingsScreen() {
             className="absolute inset-0 bg-black/40"
           />
           {dialog ? (
-            <View className="w-full max-w-[360px] rounded-2xl bg-white p-5">
-              <Text className="text-[16px] font-extrabold text-[#17261E]">{dialog.title}</Text>
-              <Text className="mt-2 text-[11px] leading-5 text-[#59635C]">{dialog.message}</Text>
+            <View className="w-full max-w-[360px] rounded-2xl bg-white p-5 dark:bg-[#1D2922]">
+              <Text className="text-[16px] font-extrabold text-[#17261E] dark:text-[#F1F4F1]">{dialog.title}</Text>
+              <Text className="mt-2 text-[11px] leading-5 text-[#59635C] dark:text-[#B5C0B7]">{dialog.message}</Text>
               <View className="mt-5 flex-row justify-end gap-3">
                 {dialog.action === 'sign-out' ? (
                   <Pressable accessibilityRole="button" disabled={signingOut} onPress={() => { void signOut(); }} className="rounded-lg bg-[#A34F46] px-4 py-2.5">

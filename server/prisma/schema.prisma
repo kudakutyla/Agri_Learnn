@@ -1,0 +1,316 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  learner
+  employer
+  trainer
+  admin
+}
+
+enum CourseStatus {
+  draft
+  submitted
+  approved
+  rejected
+}
+
+enum CourseLevel {
+  Beginner
+  Intermediate
+  Advanced
+}
+
+enum JobStatus {
+  open
+  closed
+}
+
+enum JobType {
+  Full_time @map("Full-time")
+  Part_time @map("Part-time")
+  Contract
+  Project
+}
+
+enum ApplicationStatus {
+  submitted
+}
+
+enum InvitationStatus {
+  pending
+  accepted
+  declined
+}
+
+enum VideoStatus {
+  pending
+  uploaded
+  failed
+  delete_failed
+}
+
+enum VideoUploadType {
+  single
+  multipart
+}
+
+model User {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String   @db.VarChar(80)
+  email           String   @unique @db.VarChar(120)
+  passwordHash    String
+  role            Role     @default(learner)
+  mobileNumber    String   @default("") @db.VarChar(30)
+  province        String   @default("") @db.VarChar(80)
+  category        String   @default("") @db.VarChar(80)
+  primaryInterest String   @default("") @db.VarChar(120)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  ownedCourses        Course[]            @relation("CourseOwner")
+  ownedJobs           Job[]               @relation("JobOwner")
+  ownedAssessments    Assessment[]        @relation("AssessmentOwner")
+  applications        Application[]
+  learnerProgress     CourseProgress[]
+  attempts            AssessmentAttempt[]
+  certificates        Certificate[]
+  invitationsSent     Invitation[]        @relation("InvitationEmployer")
+  invitationsReceived Invitation[]        @relation("InvitationLearner")
+  courseReviews       CourseReview[]      @relation("ReviewAuthor")
+  passwordResets      PasswordReset[]
+  uploadedVideos      Video[]             @relation("VideoUploader")
+
+  @@index([role, createdAt])
+  @@map("users")
+}
+
+model Course {
+  id          String       @id @default(uuid()) @db.Uuid
+  title       String       @db.VarChar(120)
+  category    String       @db.VarChar(80)
+  language    String       @default("English") @db.VarChar(60)
+  description String       @default("") @db.VarChar(2000)
+  objectives  String       @default("") @db.VarChar(2000)
+  skills      String[]     @default([])
+  coverImage  String?      @db.Text
+  lessons     Json         @default("[]")
+  assessment  Json?
+  files       Json         @default("[]")
+  level       CourseLevel  @default(Beginner)
+  status      CourseStatus @default(draft)
+  ownerId     String       @db.Uuid
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  owner            User             @relation("CourseOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  assessmentRecord Assessment?      @relation("CourseAssessment")
+  progress         CourseProgress[]
+  certificates     Certificate[]
+  reviews          CourseReview[]
+  videos           Video[]
+
+  @@index([ownerId, status])
+  @@index([status, createdAt])
+  @@map("courses")
+}
+
+model Job {
+  id             String    @id @default(uuid()) @db.Uuid
+  title          String    @db.VarChar(120)
+  location       String    @db.VarChar(120)
+  description    String    @db.VarChar(3000)
+  requiredSkills String[]  @default([])
+  type           JobType   @default(Full_time)
+  status         JobStatus @default(open)
+  ownerId        String    @db.Uuid
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  owner        User          @relation("JobOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  applications Application[]
+  invitations  Invitation[]
+
+  @@index([ownerId, status])
+  @@index([status, createdAt])
+  @@map("jobs")
+}
+
+model Application {
+  id        String            @id @default(uuid()) @db.Uuid
+  jobId     String            @db.Uuid
+  userId    String            @db.Uuid
+  status    ApplicationStatus @default(submitted)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([jobId, userId])
+  @@index([userId, createdAt])
+  @@index([jobId, status])
+  @@map("applications")
+}
+
+model Invitation {
+  id            String           @id @default(uuid()) @db.Uuid
+  learnerId     String           @db.Uuid
+  opportunityId String           @db.Uuid
+  employerId    String           @db.Uuid
+  message       String           @default("") @db.VarChar(500)
+  status        InvitationStatus @default(pending)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  learner     User @relation("InvitationLearner", fields: [learnerId], references: [id], onDelete: Restrict)
+  employer    User @relation("InvitationEmployer", fields: [employerId], references: [id], onDelete: Restrict)
+  opportunity Job  @relation(fields: [opportunityId], references: [id], onDelete: Restrict)
+
+  @@index([learnerId, status])
+  @@index([employerId, createdAt])
+  @@index([opportunityId, status])
+  @@map("invitations")
+}
+
+model Category {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(80)
+  slug      String   @unique @db.VarChar(80)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("categories")
+}
+
+model Assessment {
+  id           String   @id @default(uuid()) @db.Uuid
+  courseId     String   @unique @db.Uuid
+  ownerId      String   @db.Uuid
+  questions    Json
+  passingScore Int      @default(70)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  course   Course              @relation("CourseAssessment", fields: [courseId], references: [id], onDelete: Restrict)
+  owner    User                @relation("AssessmentOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  attempts AssessmentAttempt[]
+
+  @@index([ownerId])
+  @@map("assessments")
+}
+
+model AssessmentAttempt {
+  id           String   @id @default(uuid()) @db.Uuid
+  assessmentId String   @db.Uuid
+  userId       String   @db.Uuid
+  answers      Json
+  score        Int
+  passed       Boolean
+  createdAt    DateTime @default(now())
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([assessmentId, userId, createdAt])
+  @@index([userId, createdAt])
+  @@map("assessment_attempts")
+}
+
+model CourseProgress {
+  id               String    @id @default(uuid()) @db.Uuid
+  courseId         String    @db.Uuid
+  userId           String    @db.Uuid
+  completedLessons Json      @default("[]")
+  lastLessonIndex  Int?
+  enrolledAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([courseId, userId])
+  @@index([userId, updatedAt])
+  @@map("course_progress")
+}
+
+model Certificate {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @db.Uuid
+  courseId     String   @db.Uuid
+  title        String   @db.VarChar(200)
+  courseTitle  String   @db.VarChar(120)
+  category     String   @db.VarChar(80)
+  skills       String[] @default([])
+  credentialId String   @unique @db.Uuid
+  issuedAt     DateTime
+  createdAt    DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, courseId])
+  @@index([userId, issuedAt])
+  @@map("certificates")
+}
+
+model CourseReview {
+  id         String   @id @default(uuid()) @db.Uuid
+  courseId   String   @db.Uuid
+  reviewerId String   @db.Uuid
+  status     String   @db.VarChar(20)
+  note       String   @default("") @db.VarChar(500)
+  createdAt  DateTime @default(now())
+
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  reviewer User   @relation("ReviewAuthor", fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  @@index([courseId, createdAt])
+  @@index([reviewerId, createdAt])
+  @@map("course_reviews")
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  tokenHash String   @unique @db.VarChar(64)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, expiresAt])
+  @@map("password_resets")
+}
+
+model Video {
+  id                String          @id @default(uuid()) @db.Uuid
+  courseId          String          @db.Uuid
+  lessonIndex       Int
+  originalFileName  String          @db.VarChar(120)
+  storageKey        String          @unique
+  mimeType          String          @db.VarChar(100)
+  fileSize          BigInt
+  durationSeconds   Float?
+  status            VideoStatus     @default(pending)
+  uploadedBy        String          @db.Uuid
+  uploadType        VideoUploadType
+  multipartUploadId String?
+  uploadedAt        DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  uploader User   @relation("VideoUploader", fields: [uploadedBy], references: [id], onDelete: Restrict)
+
+  @@index([courseId, status])
+  @@index([uploadedBy, createdAt])
+  @@map("videos")
+}

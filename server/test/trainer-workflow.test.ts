@@ -70,6 +70,7 @@ test('trainers save real assessment questions, submit drafts, and cannot self-ap
     body: JSON.stringify({
       title: 'Trainer Workflow Course',
       category: 'Crop Production',
+      language: 'isiZulu',
       description: 'A practical introduction to crop scouting.',
       objectives: 'Identify field indicators',
       skills: ['  Crop scouting  ', 'Integrated pest management'],
@@ -80,9 +81,10 @@ test('trainers save real assessment questions, submit drafts, and cannot self-ap
   });
 
   assert.equal(createResponse.status, 201);
-  const { course } = await createResponse.json() as { course: { id: string; status: string; skills: string[] } };
+  const { course } = await createResponse.json() as { course: { id: string; status: string; skills: string[]; language: string } };
   assert.equal(course.status, 'draft');
   assert.deepEqual(course.skills, ['Crop scouting', 'Integrated pest management']);
+  assert.equal(course.language, 'isiZulu');
 
   const duplicateSkillsResponse = await fetch(`${baseUrl}/api/courses`, {
     method: 'POST',
@@ -94,6 +96,31 @@ test('trainers save real assessment questions, submit drafts, and cannot self-ap
     }),
   });
   assert.equal(duplicateSkillsResponse.status, 400);
+
+  const invalidLanguageResponse = await fetch(`${baseUrl}/api/courses`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${trainerToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: 'Invalid language course',
+      category: 'Crop Production',
+      language: ' ',
+    }),
+  });
+  assert.equal(invalidLanguageResponse.status, 400);
+
+  const defaultLanguageResponse = await fetch(`${baseUrl}/api/courses`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${trainerToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: 'Default language course',
+      category: 'Crop Production',
+    }),
+  });
+  assert.equal(defaultLanguageResponse.status, 201);
+  assert.equal(
+    (await defaultLanguageResponse.json() as { course: { language: string } }).course.language,
+    'English',
+  );
 
   const invalidAssessmentResponse = await fetch(`${baseUrl}/api/courses/${course.id}/assessments`, {
     method: 'PUT',
@@ -327,6 +354,18 @@ test('trainers save real assessment questions, submit drafts, and cannot self-ap
   });
   assert.equal(approveResponse.status, 200);
   assert.equal((await approveResponse.json() as { course: { status: string } }).course.status, 'approved');
+
+  const editPublishedResponse = await fetch(`${baseUrl}/api/courses/${course.id}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${trainerToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Updated published workflow course' }),
+  });
+  assert.equal(editPublishedResponse.status, 200);
+  const updatedPublishedCourse = (await editPublishedResponse.json() as {
+    course: { title: string; status: string };
+  }).course;
+  assert.equal(updatedPublishedCourse.title, 'Updated published workflow course');
+  assert.equal(updatedPublishedCourse.status, 'approved');
 });
 
 test('course owners can only save assessments for their own courses', async () => {

@@ -25,11 +25,14 @@ export default function LoginScreen() {
       await setStorageItem('agrilearn_role', result.user.role);
       await setStorageItem('agrilearn_name', result.user.name);
       await setStorageItem('agrilearn_user_id', result.user.id);
+      await setStorageItem('agrilearn_language', result.user.language || 'English');
       router.replace(result.user.role === 'admin'
         ? '/admin'
         : result.user.role === 'trainer'
           ? '/manage-courses'
-          : '/home');
+          : result.user.role === 'employer'
+            ? '/smme'
+            : '/home');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Please try again.');
     } finally {

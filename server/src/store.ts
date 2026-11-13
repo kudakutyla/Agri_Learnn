@@ -13,16 +13,18 @@ export type Database = {
   jobs: Record<string, unknown>[];
   applications: Record<string, unknown>[];
   invitations: Record<string, unknown>[];
+  enterprisePlans: Record<string, unknown>[];
   categories: Record<string, unknown>[];
   assessments: Record<string, unknown>[];
   attempts: Record<string, unknown>[];
   progress: Record<string, unknown>[];
   certificates: Record<string, unknown>[];
+  notifications: Record<string, unknown>[];
   courseReviews: Record<string, unknown>[];
   passwordResets: Record<string, unknown>[];
   videos: Record<string, unknown>[];
 };
-const initial: Database = { users: [], courses: [], jobs: [], applications: [], invitations: [], categories: [], assessments: [], attempts: [], progress: [], certificates: [], courseReviews: [], passwordResets: [], videos: [] };
+const initial: Database = { users: [], courses: [], jobs: [], applications: [], invitations: [], enterprisePlans: [], categories: [], assessments: [], attempts: [], progress: [], certificates: [], notifications: [], courseReviews: [], passwordResets: [], videos: [] };
 
 function load(): Database {
   if (!existsSync(file)) return structuredClone(initial);

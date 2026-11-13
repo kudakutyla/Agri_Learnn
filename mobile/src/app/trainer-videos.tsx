@@ -124,31 +124,31 @@ export default function TrainerVideosScreen() {
   }
 
   return (
-    <View className="flex-1 bg-[#F7F7F2]">
+    <View className="flex-1 bg-[#F7F7F2] dark:bg-[#101814]">
       <ScrollView
         className="flex-1"
         contentContainerClassName="px-5 pb-8 pt-6"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refreshVideos(); }} />}
       >
-        <Text className="text-xl font-extrabold text-[#252B27]">Lesson videos</Text>
-        <Text className="mt-2 text-xs leading-5 text-[#717A74]">
+        <Text className="text-xl font-extrabold text-[#252B27] dark:text-[#F1F4F1]">Lesson videos</Text>
+        <Text className="mt-2 text-xs leading-5 text-[#717A74] dark:text-[#AAB6AD]">
           Videos are stored privately in Cloudflare R2. Playback links are generated only when you preview a permitted course.
         </Text>
         {error ? <Text accessibilityRole="alert" className="mt-4 rounded-xl bg-[#FBE9E7] p-3 text-xs leading-5 text-[#9A382C]">{error}</Text> : null}
-        {loading ? <Text className="py-8 text-center text-xs text-[#717A74]">Loading your videos…</Text> : null}
+        {loading ? <Text className="py-8 text-center text-xs text-[#717A74] dark:text-[#AAB6AD]">Loading your videos…</Text> : null}
         {!loading && videos.length === 0 ? (
-          <View className="mt-5 items-center rounded-xl border border-[#E1E5DF] bg-white p-5">
-            <Text className="text-xs font-bold text-[#252B27]">No uploaded videos</Text>
-            <Text className="mt-2 text-center text-[10px] leading-4 text-[#717A74]">Add a video to a lesson while creating or editing a module.</Text>
+          <View className="mt-5 items-center rounded-xl border border-[#E1E5DF] bg-white p-5 dark:border-[#35443A] dark:bg-[#1D2922]">
+            <Text className="text-xs font-bold text-[#252B27] dark:text-[#F1F4F1]">No uploaded videos</Text>
+            <Text className="mt-2 text-center text-[10px] leading-4 text-[#717A74] dark:text-[#AAB6AD]">Add a video to a lesson while creating or editing a module.</Text>
           </View>
         ) : null}
         {videos.map((video) => (
-          <View key={video.id} className="mt-3 rounded-xl border border-[#E1E5DF] bg-white p-4">
+          <View key={video.id} className="mt-3 rounded-xl border border-[#E1E5DF] bg-white p-4 dark:border-[#35443A] dark:bg-[#1D2922]">
             <View className="flex-row items-start justify-between">
               <View className="flex-1 pr-3">
-                <Text className="text-[11px] font-extrabold text-[#252B27]">{video.courseTitle}</Text>
-                <Text className="mt-1 text-[10px] font-semibold text-[#477E62]">{video.lessonTitle}</Text>
-                <Text numberOfLines={1} className="mt-2 text-[9px] text-[#717A74]">{video.originalFileName} · {formatBytes(video.fileSize)}</Text>
+                <Text className="text-[11px] font-extrabold text-[#252B27] dark:text-[#F1F4F1]">{video.courseTitle}</Text>
+                <Text className="mt-1 text-[10px] font-semibold text-[#477E62] dark:text-[#A9CDB2]">{video.lessonTitle}</Text>
+                <Text numberOfLines={1} className="mt-2 text-[9px] text-[#717A74] dark:text-[#AAB6AD]">{video.originalFileName} · {formatBytes(video.fileSize)}</Text>
               </View>
               <Text className={`rounded-full px-2 py-1 text-[7px] font-extrabold ${video.status === 'uploaded' ? 'bg-[#EAF1E8] text-[#477E56]' : 'bg-[#FBE9E7] text-[#9A5147]'}`}>
                 {statusLabel(video.status)}

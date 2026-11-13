@@ -8,10 +8,10 @@ import { AdminBottomNav } from '../components/AdminBottomNav';
 import { API_URL, api, type AdminApprovalCourse, type CourseAssessment, type CourseFile } from '../services/api';
 import { getStorageItem } from '../services/storage';
 
-type ApprovalTab = 'Pending' | 'Reviewed' | 'Returned';
+type ApprovalTab = 'Pending' | 'Approved' | 'Reviewed' | 'Returned';
 
 function isApprovalTab(value?: string): value is ApprovalTab {
-  return value === 'Pending' || value === 'Reviewed' || value === 'Returned';
+  return value === 'Pending' || value === 'Approved' || value === 'Reviewed' || value === 'Returned';
 }
 
 export default function AdminApprovalDetailsScreen() {
@@ -129,7 +129,7 @@ export default function AdminApprovalDetailsScreen() {
       await api.admin.reviewCourse(course.id, { status, note });
       router.replace({
         pathname: '/admin-approvals',
-        params: { tab: status === 'approved' ? 'Reviewed' : 'Returned' },
+        params: { tab: status === 'approved' ? 'Approved' : 'Returned' },
       });
     } catch (reviewError) {
       setError(reviewError instanceof Error ? reviewError.message : 'Could not submit the course review.');
@@ -145,7 +145,7 @@ export default function AdminApprovalDetailsScreen() {
     }
     router.replace({
       pathname: '/admin-approvals',
-      params: { tab: isApprovalTab(returnTab) ? returnTab : 'Pending' },
+      params: { tab: returnTab === 'Reviewed' ? 'Approved' : isApprovalTab(returnTab) ? returnTab : 'Pending' },
     });
   };
 
@@ -163,28 +163,28 @@ export default function AdminApprovalDetailsScreen() {
     : [];
 
   return (
-    <View className="flex-1 bg-[#F7F7F2]">
+    <View className="flex-1 bg-[#F7F7F2] dark:bg-[#101814]">
       <ScrollView className="flex-1" contentContainerClassName="px-5 pb-6 pt-10" keyboardShouldPersistTaps="handled">
         <Pressable accessibilityRole="button" onPress={backToApprovals} className="mb-5 self-start rounded-lg px-2 py-2">
           <Text className="text-[11px] font-bold text-[#14543E]">‹  Back to approvals</Text>
         </Pressable>
 
         {loading ? (
-          <View className="rounded-2xl bg-white p-5">
-            <Text className="text-sm text-[#717A74]">Loading course information…</Text>
+          <View className="rounded-2xl bg-white p-5 dark:bg-[#1D2922]">
+            <Text className="text-sm text-[#717A74] dark:text-[#AAB6AD]">Loading course information…</Text>
           </View>
         ) : error && !course ? (
-          <View className="rounded-2xl border border-[#F0D1C8] bg-white p-5">
-            <Text className="text-lg font-extrabold text-[#252B27]">Course unavailable</Text>
+          <View className="rounded-2xl border border-[#F0D1C8] bg-white p-5 dark:bg-[#1D2922]">
+            <Text className="text-lg font-extrabold text-[#252B27] dark:text-[#F1F4F1]">Course unavailable</Text>
             <Text accessibilityRole="alert" className="mt-2 text-sm leading-5 text-[#9A382C]">{error}</Text>
           </View>
         ) : course ? (
           <>
-            <View className="mb-4 rounded-2xl border border-[#E0E5DF] bg-white p-5">
+            <View className="mb-4 rounded-2xl border border-[#E0E5DF] bg-white p-5 dark:border-[#35443A] dark:bg-[#1D2922]">
               <Text className="text-[10px] font-bold tracking-wider text-[#477E62]">COURSE REVIEW</Text>
-              <Text className="mt-2 text-[22px] font-extrabold leading-7 text-[#252B27]">{course.title}</Text>
-              <Text className="mt-2 text-xs leading-5 text-[#78817B]">
-                By {course.ownerName} · {course.category}
+              <Text className="mt-2 text-[22px] font-extrabold leading-7 text-[#252B27] dark:text-[#F1F4F1]">{course.title}</Text>
+              <Text className="mt-2 text-xs leading-5 text-[#78817B] dark:text-[#AAB6AD]">
+                By {course.ownerName} · {course.category} · {course.language || 'English'}
               </Text>
               <View className="mt-3 self-start rounded-full bg-[#F3E9D1] px-3 py-1">
                 <Text className="text-[9px] font-bold text-[#86662C]">
@@ -201,9 +201,9 @@ export default function AdminApprovalDetailsScreen() {
             ) : null}
 
             {pdfPreview && Platform.OS === 'web' ? (
-              <View className="mb-4 overflow-hidden rounded-2xl border border-[#E0E5DF] bg-white">
+              <View className="mb-4 overflow-hidden rounded-2xl border border-[#E0E5DF] bg-white dark:border-[#35443A] dark:bg-[#1D2922]">
                 <View className="flex-row items-center justify-between border-b border-[#E0E5DF] px-4 py-3">
-                  <Text numberOfLines={1} className="flex-1 pr-3 text-sm font-bold text-[#252B27]">{pdfPreview.name}</Text>
+                  <Text numberOfLines={1} className="flex-1 pr-3 text-sm font-bold text-[#252B27] dark:text-[#F1F4F1]">{pdfPreview.name}</Text>
                   <Pressable accessibilityRole="button" onPress={closePdfPreview} className="rounded-lg bg-[#EAF1E8] px-3 py-2">
                     <Text className="text-xs font-bold text-[#14543E]">Close PDF</Text>
                   </Pressable>
@@ -217,27 +217,27 @@ export default function AdminApprovalDetailsScreen() {
             ) : null}
 
             <DetailSection title="Description">
-              <Text className="text-sm leading-6 text-[#4D5851]">{course.description || 'No description provided.'}</Text>
+              <Text className="text-sm leading-6 text-[#4D5851] dark:text-[#B5C0B7]">{course.description || 'No description provided.'}</Text>
             </DetailSection>
 
             {course.objectives ? (
               <DetailSection title="Learning objectives">
-                <Text className="text-sm leading-6 text-[#4D5851]">{course.objectives}</Text>
+                <Text className="text-sm leading-6 text-[#4D5851] dark:text-[#B5C0B7]">{course.objectives}</Text>
               </DetailSection>
             ) : null}
 
             <DetailSection title="Skills learners gain">
-              <Text className="text-sm leading-6 text-[#4D5851]">
+              <Text className="text-sm leading-6 text-[#4D5851] dark:text-[#B5C0B7]">
                 {course.skills?.length ? course.skills.join(' · ') : 'No skills specified.'}
               </Text>
             </DetailSection>
 
             <DetailSection title={`Lessons (${course.lessons?.length ?? 0})`}>
               {course.lessons?.length ? course.lessons.map((lesson, index) => (
-                <Text key={`${lesson.title}-${index}`} className="mb-2 text-sm leading-6 text-[#4D5851]">
+                <Text key={`${lesson.title}-${index}`} className="mb-2 text-sm leading-6 text-[#4D5851] dark:text-[#B5C0B7]">
                   {index + 1}. {lesson.title} · {lesson.type} · {lesson.duration}
                 </Text>
-              )) : <Text className="text-sm text-[#78817B]">No lessons added.</Text>}
+              )) : <Text className="text-sm text-[#78817B] dark:text-[#AAB6AD]">No lessons added.</Text>}
             </DetailSection>
 
             <DetailSection title={`Uploaded materials (${uploadedFiles.length})`}>
@@ -245,9 +245,9 @@ export default function AdminApprovalDetailsScreen() {
                 const isVideo = file.mimeType.startsWith('video/');
                 const isPdf = file.mimeType === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
                 return (
-                  <View key={file.id} className="mb-4 rounded-xl border border-[#E7EBE5] bg-[#FAFBF8] p-3">
-                    <Text className="text-sm font-bold text-[#34483A]">{file.name}</Text>
-                    <Text className="mt-1 text-xs text-[#78817B]">
+                  <View key={file.id} className="mb-4 rounded-xl border border-[#E7EBE5] bg-[#FAFBF8] p-3 dark:border-[#35443A] dark:bg-[#101814]">
+                    <Text className="text-sm font-bold text-[#34483A] dark:text-[#E2EAE3]">{file.name}</Text>
+                    <Text className="mt-1 text-xs text-[#78817B] dark:text-[#AAB6AD]">
                       {lessonTitle ? `Lesson: ${lessonTitle} · ` : ''}{file.mimeType} · {(file.size / (1024 * 1024)).toFixed(1)} MB
                     </Text>
                     {isVideo && adminToken ? (
@@ -264,11 +264,11 @@ export default function AdminApprovalDetailsScreen() {
                         </Text>
                       </Pressable>
                     ) : (
-                      <Text className="mt-2 text-xs text-[#78817B]">Preview is not available for this file type.</Text>
+                      <Text className="mt-2 text-xs text-[#78817B] dark:text-[#AAB6AD]">Preview is not available for this file type.</Text>
                     )}
                   </View>
                 );
-              }) : <Text className="text-sm text-[#78817B]">No uploaded lesson files.</Text>}
+              }) : <Text className="text-sm text-[#78817B] dark:text-[#AAB6AD]">No uploaded lesson files.</Text>}
               {fileError ? (
                 <Text accessibilityRole="alert" className="text-sm leading-5 text-[#9A382C]">{fileError}</Text>
               ) : null}
@@ -276,19 +276,19 @@ export default function AdminApprovalDetailsScreen() {
 
             <DetailSection title="Assessment">
               {assessmentLoading ? (
-                <Text className="text-sm text-[#78817B]">Loading assessment questions…</Text>
+                <Text className="text-sm text-[#78817B] dark:text-[#AAB6AD]">Loading assessment questions…</Text>
               ) : assessmentError ? (
                 <Text accessibilityRole="alert" className="text-sm leading-6 text-[#9A382C]">{assessmentError}</Text>
               ) : assessment ? (
                 <>
-                  <Text className="mb-3 text-xs text-[#78817B]">Pass mark: {assessment.passingScore}%</Text>
+                  <Text className="mb-3 text-xs text-[#78817B] dark:text-[#AAB6AD]">Pass mark: {assessment.passingScore}%</Text>
                   {assessment.questions.map((question, index) => (
-                    <View key={`${question.prompt}-${index}`} className="mb-3 rounded-xl bg-white p-4">
-                      <Text className="text-sm font-semibold leading-5 text-[#34483A]">{index + 1}. {question.prompt}</Text>
+                    <View key={`${question.prompt}-${index}`} className="mb-3 rounded-xl bg-white p-4 dark:bg-[#101814]">
+                      <Text className="text-sm font-semibold leading-5 text-[#34483A] dark:text-[#E2EAE3]">{index + 1}. {question.prompt}</Text>
                       {question.options.map((option, optionIndex) => (
                         <Text
                           key={`${option}-${optionIndex}`}
-                          className={`mt-2 text-xs leading-5 ${optionIndex === question.correctOption ? 'font-bold text-[#39785C]' : 'text-[#69736C]'}`}
+                          className={`mt-2 text-xs leading-5 ${optionIndex === question.correctOption ? 'font-bold text-[#39785C] dark:text-[#A9CDB2]' : 'text-[#69736C] dark:text-[#AAB6AD]'}`}
                         >
                           {optionIndex === question.correctOption ? '✓ ' : '· '}{option}
                         </Text>
@@ -297,7 +297,7 @@ export default function AdminApprovalDetailsScreen() {
                   ))}
                 </>
               ) : (
-                <Text className="text-sm text-[#78817B]">No assessment questions are available.</Text>
+                <Text className="text-sm text-[#78817B] dark:text-[#AAB6AD]">No assessment questions are available.</Text>
               )}
             </DetailSection>
 
@@ -310,22 +310,22 @@ export default function AdminApprovalDetailsScreen() {
             {course.reviews.length ? (
               <DetailSection title="Review history">
                 {course.reviews.map((review) => (
-                  <View key={review.id} className="mb-3 rounded-xl bg-white p-4">
-                    <Text className="text-sm font-bold text-[#34483A]">
+                  <View key={review.id} className="mb-3 rounded-xl bg-white p-4 dark:bg-[#101814]">
+                    <Text className="text-sm font-bold text-[#34483A] dark:text-[#E2EAE3]">
                       {review.status === 'approved' ? 'Approved' : 'Returned'} by {review.reviewerName ?? 'Administrator'}
                     </Text>
-                    <Text className="mt-1 text-xs text-[#78817B]">{new Date(review.createdAt).toLocaleString()}</Text>
-                    {review.note ? <Text className="mt-2 text-sm leading-5 text-[#4D5851]">{review.note}</Text> : null}
+                    <Text className="mt-1 text-xs text-[#78817B] dark:text-[#AAB6AD]">{new Date(review.createdAt).toLocaleString()}</Text>
+                    {review.note ? <Text className="mt-2 text-sm leading-5 text-[#4D5851] dark:text-[#B5C0B7]">{review.note}</Text> : null}
                   </View>
                 ))}
               </DetailSection>
             ) : null}
 
             {course.status === 'submitted' ? (
-              <View className="mb-5 rounded-2xl border border-[#E0E5DF] bg-white p-4">
-                <Text className="mb-2 text-sm font-bold text-[#34483A]">Feedback for trainer (required to return)</Text>
+              <View className="mb-5 rounded-2xl border border-[#E0E5DF] bg-white p-4 dark:border-[#35443A] dark:bg-[#1D2922]">
+                <Text className="mb-2 text-sm font-bold text-[#34483A] dark:text-[#E2EAE3]">Feedback for content creator (required to return)</Text>
                 <TextInput
-                  accessibilityLabel="Feedback for trainer"
+                  accessibilityLabel="Feedback for content creator"
                   value={reviewNote}
                   onChangeText={setReviewNote}
                   placeholder="Explain what needs revision..."
@@ -333,14 +333,14 @@ export default function AdminApprovalDetailsScreen() {
                   multiline
                   maxLength={500}
                   textAlignVertical="top"
-                  className="min-h-24 rounded-xl border border-[#DDE3DD] bg-[#FAFBF8] px-3 py-2 text-sm leading-5 text-[#252B27]"
+                  className="min-h-24 rounded-xl border border-[#DDE3DD] bg-[#FAFBF8] px-3 py-2 text-sm leading-5 text-[#252B27] dark:border-[#35443A] dark:bg-[#101814] dark:text-[#E2EAE3]"
                 />
                 <View className="mt-3 flex-row gap-2">
                   <Pressable
                     accessibilityRole="button"
                     disabled={submitting}
                     onPress={() => { void submitReview('rejected'); }}
-                    className="h-12 flex-1 items-center justify-center rounded-xl border border-[#D6A39A] bg-white"
+                    className="h-12 flex-1 items-center justify-center rounded-xl border border-[#D6A39A] bg-white dark:bg-[#101814]"
                   >
                     <Text className="text-xs font-bold text-[#994D43]">{submitting ? 'Saving…' : 'Return for edits'}</Text>
                   </Pressable>
@@ -366,8 +366,8 @@ export default function AdminApprovalDetailsScreen() {
 
 function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <View className="mb-4 rounded-2xl border border-[#E0E5DF] bg-white p-4">
-      <Text className="mb-2 text-base font-extrabold text-[#252B27]">{title}</Text>
+    <View className="mb-4 rounded-2xl border border-[#E0E5DF] bg-white p-4 dark:border-[#35443A] dark:bg-[#1D2922]">
+      <Text className="mb-2 text-base font-extrabold text-[#252B27] dark:text-[#F1F4F1]">{title}</Text>
       {children}
     </View>
   );

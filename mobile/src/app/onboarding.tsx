@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Button } from '../components/Button';
+import { useUiText } from '../services/useUiText';
 
 const slides = [
   {
@@ -25,6 +26,7 @@ const slides = [
 ];
 
 export default function OnboardingScreen() {
+  const { t } = useUiText();
   const [slide, setSlide] = useState(0);
   const current = slides[slide];
 
@@ -37,19 +39,19 @@ export default function OnboardingScreen() {
         </Pressable>
       </View>
       <View className={`flex-1 rounded-t-[30px] bg-agrilearn-light px-[25px] pb-[34px] pt-[34px] ${slide === 2 ? '-mt-[10px]' : '-mt-[30px]'}`}>
-        <Text className="mb-2 text-[10px] font-extrabold tracking-[1.3px] text-agrilearn-green">{current.eyebrow}</Text>
-        <Text className="text-[31px] font-extrabold leading-[37px] tracking-[-1px] text-[#103D2B]">{current.title}</Text>
-        <Text className="mt-3 min-h-[72px] text-[15px] leading-[24px] text-[#717A74]">{current.body}</Text>
+        <Text className="mb-2 text-[10px] font-extrabold tracking-[1.3px] text-agrilearn-green">{t(current.eyebrow)}</Text>
+        <Text className="text-[31px] font-extrabold leading-[37px] tracking-[-1px] text-[#103D2B]">{t(current.title)}</Text>
+        <Text className="mt-3 min-h-[72px] text-[15px] leading-[24px] text-[#717A74]">{t(current.body)}</Text>
         <View className="my-[27px] flex-row gap-[6px]">
           {slides.map((item, index) => (
             <View key={item.title} className={`h-[7px] rounded-full ${index === slide ? 'w-6 bg-agrilearn-green' : 'w-[7px] bg-[#CBD2CB]'}`} />
           ))}
         </View>
         <Pressable onPress={() => router.push('/register')} className="mb-3 items-center">
-          <Text className="font-bold text-agrilearn-green">Skip</Text>
+          <Text className="font-bold text-agrilearn-green">{t('Skip')}</Text>
         </Pressable>
         <Button
-          label={slide < 2 ? 'Continue' : 'Create my account'}
+          label={t(slide < 2 ? 'Continue' : 'Create my account')}
           onPress={() => slide < 2 ? setSlide(slide + 1) : router.push('/register')}
         />
       </View>

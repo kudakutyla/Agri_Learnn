@@ -3,20 +3,20 @@ import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 're
 import { AdminBottomNav } from '../components/AdminBottomNav';
 import { api, type Profile } from '../services/api';
 
-type UserFilter = 'All' | 'Learners' | 'Trainers' | 'SMMEs';
+type UserFilter = 'All' | 'Learners' | 'Content Creators' | 'SMMEs';
 
-const userFilters: UserFilter[] = ['All', 'Learners', 'Trainers', 'SMMEs'];
+const userFilters: UserFilter[] = ['All', 'Learners', 'Content Creators', 'SMMEs'];
 
 function roleMatchesFilter(user: Profile, filter: UserFilter) {
   if (filter === 'All') return true;
   if (filter === 'Learners') return user.role === 'learner';
-  if (filter === 'Trainers') return user.role === 'trainer';
+  if (filter === 'Content Creators') return user.role === 'trainer';
   return user.role === 'employer';
 }
 
 function roleLabel(role: string) {
   if (role === 'learner') return 'Learner';
-  if (role === 'trainer') return 'Trainer';
+  if (role === 'trainer') return 'Content creator';
   if (role === 'employer') return 'SMME';
   return 'Administrator';
 }
@@ -85,7 +85,7 @@ export default function AdminUsersScreen() {
   }, [filter, search, showAdministrators, users]);
 
   return (
-    <View className="flex-1 bg-[#F7F7F2]">
+    <View className="flex-1 bg-[#F7F7F2] dark:bg-[#101814]">
       <ScrollView
         className="flex-1"
         contentContainerClassName="px-4 pb-5 pt-12"
@@ -93,8 +93,8 @@ export default function AdminUsersScreen() {
       >
         <View className="flex-row items-start justify-between">
           <View className="flex-1 pr-3">
-            <Text className="text-[22px] font-extrabold leading-7 text-[#252B27]">User management</Text>
-            <Text className="mt-1 text-[9px] text-[#78817B]">
+            <Text className="text-[22px] font-extrabold leading-7 text-[#252B27] dark:text-[#F1F4F1]">User management</Text>
+            <Text className="mt-1 text-[9px] text-[#78817B] dark:text-[#AAB6AD]">
               {loading ? 'Loading registered users…'
                 : error ? 'Registered user count unavailable'
                   : `${users.length.toLocaleString()} registered users`}
@@ -105,13 +105,13 @@ export default function AdminUsersScreen() {
             accessibilityLabel={showAdministrators ? 'Hide administrator accounts' : 'Show administrator accounts'}
             accessibilityState={{ selected: showAdministrators }}
             onPress={() => setShowAdministrators((current) => !current)}
-            className={`h-9 w-9 items-center justify-center rounded-full border ${showAdministrators ? 'border-[#B6CDBB] bg-[#E8F0E7]' : 'border-[#E0E5DF] bg-white'}`}
+            className={`h-9 w-9 items-center justify-center rounded-full border ${showAdministrators ? 'border-[#B6CDBB] bg-[#E8F0E7] dark:border-[#42664F] dark:bg-[#23362A]' : 'border-[#E0E5DF] bg-white dark:border-[#35443A] dark:bg-[#1D2922]'}`}
           >
             <Text className="text-base text-[#14543E]">▽</Text>
           </Pressable>
         </View>
 
-        <View className="mt-5 h-10 flex-row items-center rounded-xl border border-[#E1E5DF] bg-white px-3">
+        <View className="mt-5 h-10 flex-row items-center rounded-xl border border-[#E1E5DF] bg-white px-3 dark:border-[#35443A] dark:bg-[#1D2922]">
           <Text className="mr-2 text-base text-[#78817B]">⌕</Text>
           <TextInput
             accessibilityLabel="Search users by name, email or ID"
@@ -119,7 +119,7 @@ export default function AdminUsersScreen() {
             onChangeText={setSearch}
             placeholder="Search name, email or ID..."
             placeholderTextColor="#A0A7A1"
-            className="h-full flex-1 text-[10px] text-[#252B27]"
+            className="h-full flex-1 text-[10px] text-[#252B27] dark:text-[#F1F4F1]"
             returnKeyType="search"
             autoCapitalize="none"
           />
@@ -130,7 +130,7 @@ export default function AdminUsersScreen() {
           ) : null}
         </View>
 
-        <View className="mt-2 flex-row rounded-xl bg-[#E9ECE7] p-1">
+        <View className="mt-2 flex-row rounded-xl bg-[#E9ECE7] p-1 dark:bg-[#1D2922]">
           {userFilters.map((item) => {
             const selected = filter === item;
             return (
@@ -139,24 +139,24 @@ export default function AdminUsersScreen() {
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
                 onPress={() => setFilter(item)}
-                className={`h-7 flex-1 items-center justify-center rounded-lg ${selected ? 'bg-white shadow-sm' : ''}`}
+                className={`h-7 flex-1 items-center justify-center rounded-lg ${selected ? 'bg-white shadow-sm dark:bg-[#35443A]' : ''}`}
               >
-                <Text className={`text-[8px] font-semibold ${selected ? 'text-[#14543E]' : 'text-[#67716A]'}`}>{item}</Text>
+                <Text className={`text-[8px] font-semibold ${selected ? 'text-[#14543E] dark:text-[#B7E2C2]' : 'text-[#67716A] dark:text-[#AAB6AD]'}`}>{item}</Text>
               </Pressable>
             );
           })}
         </View>
 
         {filter === 'All' ? (
-          <View className="mt-2 flex-row items-center rounded-lg bg-[#E8F0E7] px-3 py-2">
-            <Text className="text-[9px] font-semibold text-[#14543E]">
+          <View className="mt-2 flex-row items-center rounded-lg bg-[#E8F0E7] px-3 py-2 dark:bg-[#23362A]">
+            <Text className="text-[9px] font-semibold text-[#14543E] dark:text-[#B7E2C2]">
               {showAdministrators ? 'Administrator accounts are included in All.' : 'Administrator accounts are hidden from All.'}
             </Text>
           </View>
         ) : null}
 
         {error ? (
-          <View className="mt-4 rounded-xl border border-[#F0D1C8] bg-white p-4">
+          <View className="mt-4 rounded-xl border border-[#F0D1C8] bg-white p-4 dark:bg-[#1D2922]">
             <Text accessibilityRole="alert" className="text-[10px] leading-4 text-[#9A382C]">{error}</Text>
             <Pressable accessibilityRole="button" onPress={() => { void loadUsers(); }} className="mt-3 self-start rounded-lg bg-[#14543E] px-4 py-2">
               <Text className="text-[9px] font-bold text-white">Try again</Text>
@@ -166,16 +166,16 @@ export default function AdminUsersScreen() {
 
         <View className="mt-4">
           {loading ? (
-            <Text className="py-4 text-[10px] text-[#78817B]">Loading users…</Text>
+            <Text className="py-4 text-[10px] text-[#78817B] dark:text-[#AAB6AD]">Loading users…</Text>
           ) : error ? null : filteredUsers.length ? (
             filteredUsers.map((user, index) => (
-              <View key={user.id} className={`min-h-[65px] flex-row items-center py-2 ${index > 0 ? 'border-t border-[#DDE3DD]' : ''}`}>
+              <View key={user.id} className={`min-h-[65px] flex-row items-center py-2 ${index > 0 ? 'border-t border-[#DDE3DD] dark:border-[#35443A]' : ''}`}>
                 <View className="mr-2.5 h-9 w-9 items-center justify-center rounded-full bg-[#E8F0E7]">
                   <Text className="text-[9px] font-extrabold text-[#14543E]">{initials(user.name)}</Text>
                 </View>
                 <View className="flex-1 pr-2">
-                  <Text numberOfLines={1} className="text-[10px] font-bold text-[#252B27]">{user.name}</Text>
-                  <Text numberOfLines={1} className="mt-1 text-[8px] text-[#78817B]">{profileDescription(user)}</Text>
+                  <Text numberOfLines={1} className="text-[10px] font-bold text-[#252B27] dark:text-[#F1F4F1]">{user.name}</Text>
+                  <Text numberOfLines={1} className="mt-1 text-[8px] text-[#78817B] dark:text-[#AAB6AD]">{profileDescription(user)}</Text>
                 </View>
                 <Text className="rounded-full bg-[#E8F0E7] px-2 py-1 text-[7px] font-bold text-[#477E62]">Registered</Text>
                 <Text accessibilityElementsHidden className="ml-2 text-base text-[#526058]">›</Text>

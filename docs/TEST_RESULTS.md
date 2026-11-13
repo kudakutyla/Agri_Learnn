@@ -1,5 +1,183 @@
 # AgriLearn Test Results
 
+## 2026-11-13 — Active Learner Names and Role-Wide Appearance
+
+| Check | Result | Evidence |
+|---|---|---|
+| Active learner detail privacy and authorization | Passed | `server/test/trainer-analytics.test.ts`: 4/4 passed; verifies the aggregate remains identity-free, names are loaded separately for recent activity on approved trainer-owned courses, duplicates/older activity/other roles or trainers are excluded, and non-trainers are denied |
+| Backend build | Passed | `server` `npm run build` |
+| Trainer active learner detail | Passed | Browser selected Active learners and confirmed the course-scoped learner name appears only in the expanded detail |
+| Appearance preference and persistence | Passed | Browser toggled dark → light → dark from Trainer Profile and reloaded the page; the saved dark preference was restored |
+| Mobile static checks | Passed | `mobile` `npm run typecheck`; direct ESLint on all changed mobile source files. The full `npm run lint` command did not complete within the validation window. |
+| Admin-role and native-device appearance acceptance | Not run | Admin settings control is implemented; no admin browser session or native device was used for this check |
+
+## 2026-11-13 — Interactive Trainer Analytics Cards
+
+| Check | Result | Evidence |
+|---|---|---|
+| Metric card interactions | Implemented | Each summary card selects/highlights its metric and reveals per-course values; selecting it again or closing the breakdown clears the selection |
+| Active learners per course | Passed | The API returns a 30-day unique active learner count per approved trainer-owned course while preserving the aggregate-only response; `server/test/trainer-analytics.test.ts` checks deduplication and privacy |
+| Backend test and build | Passed | `server` `node --test --import tsx test/trainer-analytics.test.ts`; `server` `npm run build` |
+| Mobile typecheck and lint | Passed | `mobile` `npm run typecheck`; `mobile` `npm run lint` |
+| Browser interaction | Passed | Signed-in trainer selected Enrolments and Active learners; each card highlighted and opened its per-course breakdown, including the 30-day active learner explanation and count |
+| Native-device acceptance | Not run | Native interaction still needs device verification |
+
+## 2026-11-13 — Learner Certificate View and PDF Export
+
+| Check | Result | Evidence |
+|---|---|---|
+| Passport credential navigation and certificate design | Implemented | Selecting a credential or passing an assessment opens a certificate view with the authenticated learner/course details, earned skills, issue date, and credential ID; the design clearly states that AgriLearn does not imply external accreditation |
+| Certificate PDF export | Implemented | Expo Print generates a landscape certificate PDF; native platforms offer the file through the system share/save sheet and web opens the browser print dialog for saving as PDF |
+| Mobile typecheck and lint | Passed | `mobile` `npm run typecheck`; `mobile` `npm run lint` |
+| Expo dependency doctor | Existing project issue | `npx expo-doctor`: 19/20 checks passed; it reports eight pre-existing Expo SDK patch-version mismatches (Expo, Constants, Document Picker, Linking, Router, Secure Store, Status Bar, and Video) |
+| Populated certificate browser and native-device acceptance | Not run | The available browser session has no authenticated account with an issued certificate; native PDF sharing still needs device verification |
+
+## 2026-11-12 — Trainer Learner Analytics
+
+| Check | Result | Evidence |
+|---|---|---|
+| Trainer analytics API and aggregate-only response | Passed | `server/test/trainer-analytics.test.ts` verifies owner isolation, approved-course scoping, enrolment/lesson/assessment/certificate aggregates, empty data, authorization, and exclusion of personal or raw assessment data |
+| Backend regression suite | Passed | `server` `npm test`: 38/38 passed with an isolated empty dotenv file so local R2 credentials do not invalidate missing-configuration tests |
+| Server TypeScript build | Passed | `server` `npm run build` |
+| Mobile typecheck and lint | Passed | `mobile` `npm run typecheck`; `mobile` `npm run lint` |
+| Browser navigation and empty-state acceptance | Passed | Signed-in trainer opened Reviews, saw the analytics page with the active Reviews tab, and received the empty state because the account has no approved courses |
+| Populated analytics device acceptance | Not run | No learner activity was available in the signed-in trainer account; populated mobile-device layout remains unverified |
+
+## 2026-11-12 — Trainer Profile Navigation
+
+| Check | Result | Evidence |
+|---|---|---|
+| Trainer Profile tab destination | Implemented | The creator navigation now opens a dedicated trainer profile route rather than returning to the dashboard |
+| Profile layout and account actions | Implemented | Trainer profile reuses the learner profile layout with trainer navigation; profile editing, language, notifications, and sign-out actions remain shared |
+| Mobile typecheck and lint | Passed | `mobile` `npm run typecheck`; `mobile` `npm run lint` |
+| Browser navigation acceptance | Passed | Signed-in trainer opened the Profile tab, saw the shared profile layout with “Trainer account,” then returned to the dashboard |
+
+## 2026-11-12 — Module Cover and Skills Visibility
+
+| Check | Result | Evidence |
+|---|---|---|
+| Module authoring controls | Passed | Browser check confirmed the Step 1 cover picker and skills input/Add/remove controls; a temporary skill was added and removed without saving |
+| Learner course details | Implemented | Course details now carries and displays the saved cover image; existing skills display remains in place |
+| Mobile typecheck and lint | Passed | `mobile` `npm run typecheck`; `mobile` `npm run lint` |
+| Saved cover image visual check | Not run | The shared browser check did not select and publish a new cover image |
+
+## 2026-11-12 — Browser Multipart Upload CORS Fix
+
+| Check | Result | Evidence |
+|---|---|---|
+| Root cause | Confirmed | Browser preflight was rejected because R2 allowed `http://localhost:3000`, not the app origin `http://localhost:8081`; multipart `ETag` was not exposed |
+| R2 CORS update | Passed | Preserved existing origins/methods, added the exact Expo web origin, and exposed required media and multipart response headers; no wildcard origin was added |
+| R2 browser preflight | Passed | `OPTIONS` from `http://localhost:8081` returned HTTP 204 with the allowed origin and `PUT` method |
+| Selected trainer video multipart upload | Passed | Retried the selected MP4 in the shared browser; upload completed and the lesson appeared with its automatically detected 4-minute duration |
+| Native playback/offline playback | Not run | This verifies browser upload and lesson association, not device playback or offline viewing |
+
+## 2026-11-12 — Automatic Trainer Video Duration
+
+| Check | Result | Evidence |
+|---|---|---|
+| Video duration extraction during lesson authoring | Implemented | Native authoring reads the selected video's duration with Expo Video; web authoring reads browser media metadata. Both fill the duration field, prevent manual mismatch, and pass exact seconds into video metadata |
+| Invalid, unreadable, or over-24-hour video metadata | Implemented | Metadata errors and timeouts are surfaced; the client enforces the API's 24-hour duration limit before upload |
+| Mobile typecheck and lint | Passed | `mobile` `npm run typecheck`; `mobile` `npm run lint` |
+| Native and browser picker acceptance | Not run | Duration extraction still needs verification with actual MP4 and MOV files on target platforms |
+
+## 2026-11-12 — Registered Trainer R2 Upload Flow
+
+| Check | Result | Evidence |
+|---|---|---|
+| Trainer registration and owned course creation | Passed | Fresh trainer registered through the API and created an owned draft course in an isolated temporary data store |
+| Signed R2 upload and server completion | Passed (API integration) | Uploaded a temporary 32-byte MP4-header fixture through the signed URL; server verified it and associated the video with the course lesson |
+| Trainer video listing and cleanup | Passed | The new trainer could list the uploaded video; the test video was deleted from R2 and temporary data removed |
+| Playable video and mobile upload UI | Not verified | The fixture is not decodable; this did not exercise the mobile screens or demonstrate playback |
+| Android/iOS device check | Not run | No Android device/emulator was connected; no iOS device/simulator was available |
+
+## 2026-11-12 — Real R2 Download Smoke Test
+
+| Check | Result | Evidence |
+|---|---|---|
+| R2 bucket credentials and access | Passed | `HeadBucket` succeeded using the local server environment; no credential values were printed |
+| Server object verification and signed download | Passed (smoke test) | A temporary 32-byte MP4-header fixture was uploaded and checked by `verifyUploadedVideo`; a signed playback URL returned HTTP `206` with the requested 16/32-byte range, then the fixture was deleted |
+| Backend regression tests | Passed | `server` `npm test`: 35/35 passed with an isolated empty dotenv file so local R2 credentials do not invalidate missing-configuration tests |
+| Real video decoding and offline mobile playback | Not run | The fixture is not a playable video; no Android tooling/device or iOS simulator/device was available on the host |
+
+## 2026-11-12 — Learner Preferred Language
+
+| Check | Result | Evidence |
+|---|---|---|
+| Learner registration language preference | Passed | Profile API tests verify a selected language persists through registration and profile updates; unsupported registration languages are rejected and older clients default to English |
+| Web registration language selector | Passed | Browser preview verified a farmer can open the preferred-language list and select isiZulu on the learner-details step |
+| Backend test and build | Passed | `server` `node --test --import tsx test/profile.test.ts`: 5/5 passed; `server` `npm run build` |
+| Mobile typecheck and lint | Passed | `mobile` `npm run typecheck`; `mobile` `npm run lint` |
+| Native device acceptance | Not run | Native device rendering and interaction should still be checked on target devices |
+
+## 2026-11-11 — Handbook SMME Enterprise-Development Journey
+
+| Check | Result | Evidence |
+|---|---|---|
+| Employer registration and login routing | Implemented | Employer accounts land on the SMME workspace rather than the learner dashboard |
+| Private SMME business profile and diagnostic persistence | Passed | `server/test/smme.test.ts` verifies owner-scoped profiles, the 11-area assessment, readiness score history, funding checklist, and mentor-need tracking |
+| SMME authorization and validation | Passed | The API rejects invalid assessment scores, requires authentication, restricts access to employer accounts, and returns no other employer's plan |
+| Skills-gap and training plan | Implemented | The workspace derives lower-scoring areas and displays only matching published courses returned by the API, with an empty state when none match |
+| Mentor, funding, and market-linkage limitations | Implemented | The UI explains that mentor assignment, funding applications, and buyer-directory publishing are not connected; no external service is represented as completed |
+| Backend build and regression tests | Passed | `server` `npm run build`; `server` `npm test`: 34/34 passed |
+| Mobile typecheck and lint | Passed | `mobile` `npm run typecheck`; `mobile` `npm run lint` |
+| Visual/device acceptance | Not run | Check the SMME workspace layout and assessment interaction on target phone sizes and devices |
+
+## 2026-11-11 — Registration Password Confirmation
+
+| Check | Result | Evidence |
+|---|---|---|
+| Registration password confirmation and visibility | Implemented | Registration requires matching password fields before continuing and provides independent show/hide controls for both fields |
+| Mobile typecheck and lint | Passed | `mobile` `npm run typecheck`; `mobile` `npm run lint` |
+| Visual/device interaction | Not run | Native keyboard and screen layout should still be checked on target devices |
+
+## 2026-11-11 — Handbook-Aligned AgriLearn Content
+
+| Check | Result | Evidence |
+|---|---|---|
+| Course language persistence | Passed | Trainer workflow API test saves an isiZulu course language and rejects a blank language |
+| Language-aware discovery | Implemented | Published courses expose their main language in Explore and course details and can be filtered by available language; language labels do not imply translated content |
+| Handbook catalogue categories | Implemented | Registration interests, course authoring, and Explore filters share the AgriLearn agricultural topic list |
+| Microlearning pathway guidance | Implemented | Course authoring recommends focused lessons of about five minutes; course details explain the assessment-to-microcredential-to-Passport path |
+| Backend build, regression tests, and Prisma validation | Passed | `server` `npm run build`; `server` `npm test`: 32/32 passed; `server` `npm run db:validate` |
+| Mobile typecheck and lint | Passed | `mobile` `npm run typecheck`; `mobile` `npm run lint` |
+| Expo web export | Passed | `npx expo export --platform web` emitted the updated course-authoring, Explore, course-details, and admin-review routes |
+| Farmer-tier remaining work | Not verified/implemented | Native airplane-mode acceptance, actual local-language course content, and SMS/IVR integration remain outstanding; external handbook integrations are not included |
+| User cleanup | Not performed | User confirmed no accounts should be removed; no account or linked data was changed |
+
+## 2026-11-11 — Account-Specific Notifications
+
+| Check | Result | Evidence |
+|---|---|---|
+| Notification ownership and authentication | Passed | API tests verify each account receives only its own welcome, enrolment, and lesson-progress notifications; unauthenticated requests are rejected |
+| Duplicate completion notifications | Passed | Repeating a completed lesson request does not create another progress notification |
+| Backend build and regression tests | Passed | `server` `npm run build`; `server` `npm test`: 32/32 passed |
+| Mobile typecheck and lint | Passed | `mobile` `npm run typecheck`; `mobile` `npm run lint` |
+
+## 2026-11-10 — Learner-Specific Home and Saved Course Position
+
+| Check | Result | Evidence |
+|---|---|---|
+| New learner progress API | Passed | `server` `npm test`: new account receives no enrolled courses |
+| Learner data isolation | Passed | API returns only the authenticated learner's approved-course enrolments and filters invalid lesson indexes and unpublished courses |
+| Save & exit resume API | Passed | Saving a lesson position creates or updates only the signed-in learner's enrolment, preserves completed lesson records, validates lesson indexes, and is returned as the resume lesson |
+| Home and My Learning data source | Passed | Screens load the signed-in learner's persisted course progress; a new learner with 0 enrolments sees “No modules in progress” / “No courses in progress” |
+| Lessons complete but assessment pending | Passed | Browser smoke test with a persisted 100%-lesson course and no issued certificate confirmed the course remains visible in Home and My Learning with an “ASSESSMENT PENDING” status; no learner records were changed |
+| Explore course source | Passed | Course cards now come from approved API records only; selecting sample IDs that have no backend course no longer opens non-persistable lessons |
+| Backend build and regression tests | Passed | `server` `npm run build`; `server` `npm test`: 30/30 passed |
+| Mobile typecheck and lint | Passed | `mobile` `npm run typecheck`; `mobile` `npm run lint` |
+| Expo Doctor | Passed | `mobile` `npx expo-doctor`: 20/20 checks |
+
+## 2026-11-10 — Prisma Migration Foundation
+
+| Check | Result | Evidence |
+|---|---|---|
+| Prisma schema validation | Passed | `server` `npm run db:validate`; no database connection required |
+| Prisma Client generation | Passed | `server` `npm run db:generate` |
+| Local JSON migration preflight | Passed for inspected snapshot | 24 users, 10 courses, 1 job, 3 applications, 4 assessments, 3 attempts, 2 progress records, 2 certificates, and 1 review; no malformed UUIDs, checked orphan references, normalized duplicate emails, or modeled unique-key collisions |
+| Live database migration / data import | Not run | No connection, schema apply, or write was performed. See [DATABASE_MIGRATION.md](./DATABASE_MIGRATION.md); obtain explicit target approval before database changes |
+| Backend build | Passed | `server` `npm run build` |
+| Backend regression tests | Passed | `server` `npm test`: 26/26 passed |
+
 ## Cloudflare R2 Video Storage Integration
 
 | Check | Result | Evidence |
@@ -148,9 +326,9 @@
 | Learner job application | Passed | The learner opened Opportunities from My Learning and submitted an application; the app displayed Application submitted |
 | Trainer authoring | Passed | Registered a test content creator, created a course with a skill, added a lesson and assessment, submitted it, and confirmed My Content showed UNDER REVIEW |
 | Administrator review | Blocked in app | `/admin` displayed User and role management, Content approvals, Categories, and Reports as static labels with zero interactive buttons; the trainer course cannot be approved through the normal admin path |
-| Employer vacancy workflow | Unavailable in app | API tests cover publishing jobs and listing applications, but the app has no employer workspace or job create/manage screen |
+| Employer vacancy workflow | Unavailable in app | API tests cover publishing jobs and listing applications; the SMME growth workspace exists, but a separate job create/manage screen is still unavailable |
 | Invitations, learner consent, role/user administration, category editing, reports | Not available to verify | No complete app workflow exists; invitation listing/response and sharing permissions are also absent or untested in the backend |
-| Learner-specific in-progress list | Incomplete | My Learning Completed is certificate-backed, but In progress and its summary metrics still come from sample course data, not the signed-in learner’s persisted progress |
+| Learner-specific in-progress list | Incomplete at time of this 2026-11-06 audit; resolved 2026-11-10 | My Learning now uses the signed-in learner's API-backed enrolments, completed lesson counts, and saved resume position; see the 2026-11-10 test entry above |
 | Automated checks | Passed | Backend tests 14/14 and server build passed; mobile typecheck, lint, Expo web export, and Expo Doctor 20/20 passed |
 | Test data | Note | The local JSON store now contains a test learner with a course progress record, certificate, and job application, plus a test trainer and submitted “Usual Path Test: Sustainable Soil Care” course. No existing records were deleted or edited |
 

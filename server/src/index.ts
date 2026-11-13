@@ -69,6 +69,20 @@ function createPdfUpload(maxBytes: number) {
 
 const pdfFileUpload = createPdfUpload(pdfMaxBytes);
 
+const userLanguageSchema = z.enum([
+  'Afrikaans',
+  'English',
+  'isiNdebele',
+  'isiXhosa',
+  'isiZulu',
+  'Sepedi',
+  'Sesotho',
+  'Setswana',
+  'siSwati',
+  'Tshivenda',
+  'Xitsonga',
+  'Other',
+]);
 const registerSchema = z.object({
   name: z.string().trim().min(2).max(80),
   email: z.string().trim().email().max(120),
@@ -78,6 +92,7 @@ const registerSchema = z.object({
   province: z.string().trim().max(80).default(''),
   category: z.string().trim().max(80).default(''),
   primaryInterest: z.string().trim().max(120).default(''),
+  language: userLanguageSchema.default('English'),
 });
 const loginSchema = registerSchema.pick({ email: true, password: true });
 const forgotPasswordSchema = z.object({
@@ -99,8 +114,13 @@ function publicUser(user: User) {
     province: user.province ?? '',
     category: user.category ?? '',
     primaryInterest: user.primaryInterest ?? '',
+    language: user.language ?? 'English',
     createdAt: user.createdAt,
   };
+}
+
+function addNotification(userId: string, title: string, message: string) {
+  return store.create('notifications', { userId, title, message });
 }
 
 function signToken(user: User) {
@@ -149,7 +169,9 @@ app.post('/api/auth/register', async (req, res) => {
     province: parsed.data.province,
     category: parsed.data.category,
     primaryInterest: parsed.data.primaryInterest,
+    language: parsed.data.language,
   });
+  addNotification(user.id, 'Welcome to AgriLearn', `Welcome, ${user.name}! Explore practical courses and grow your skills.`);
   return res.status(201).json({ user: publicUser(user), token: signToken(user) });
 });
 
@@ -214,6 +236,22 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 app.get('/api/me', requireAuth, (req, res) => res.json({ user: publicUser(res.locals.user as User) }));
+app.get('/api/me/notifications', requireAuth, (req, res) => {
+  const userId = String(res.locals.user.id);
+  const notifications = store.list('notifications')
+    .filter((notification) => notification.userId === userId)
+    .map((notification, index) => ({ notification, index }))
+    .sort((a, b) =>
+      String(b.notification.createdAt ?? '').localeCompare(String(a.notification.createdAt ?? ''))
+      || b.index - a.index)
+    .map(({ notification }) => ({
+      id: notification.id,
+      title: notification.title,
+      message: notification.message,
+      createdAt: notification.createdAt,
+    }));
+  return res.json({ notifications });
+});
 const profileSchema = z.object({
   name: z.string().trim().min(2).max(80),
   email: z.string().trim().email().max(120),
@@ -221,6 +259,7 @@ const profileSchema = z.object({
   province: z.string().trim().max(80),
   category: z.string().trim().max(80),
   primaryInterest: z.string().trim().max(120),
+  language: userLanguageSchema.optional(),
   currentPassword: z.string().max(72).optional(),
   newPassword: z.string().min(8).max(72).optional(),
 });
@@ -249,6 +288,44 @@ app.patch('/api/me', requireAuth, async (req, res) => {
   });
   if (!user) return res.status(404).json({ error: 'Account not found' });
   return res.json({ user: publicUser(user) });
+});
+
+app.get('/api/smme/plan', requireAuth, requireRole('employer'), (req, res) => {
+  const plan = store.list('enterprisePlans').find((item) => item.ownerId === res.locals.user.id);
+  return res.json({ plan: plan ?? null });
+});
+app.put('/api/smme/plan', requireAuth, requireRole('employer'), (req, res) => {
+  const parsed = enterprisePlanUpdateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Check the business profile, diagnostic, and progress details.' });
+
+  const ownerId = res.locals.user.id as string;
+  const existing = store.list('enterprisePlans').find((item) => item.ownerId === ownerId);
+  const businessName = parsed.data.businessName ?? existing?.businessName;
+  if (!businessName) return res.status(400).json({ error: 'Save your business name before continuing.' });
+  if (parsed.data.mentorRequested === false && existing?.mentorRequested === true) {
+    return res.status(400).json({ error: 'A mentor matching request cannot be withdrawn in the app.' });
+  }
+
+  const update: Record<string, unknown> = { ...parsed.data, ownerId };
+  if (parsed.data.diagnostic) {
+    const scores = Object.values(parsed.data.diagnostic);
+    const maturityScore = Math.round(scores.reduce((total, score) => total + score, 0) / scores.length * 20);
+    const history = Array.isArray(existing?.assessmentHistory) ? existing.assessmentHistory : [];
+    update.assessmentHistory = [
+      ...history,
+      {
+        submittedAt: new Date().toISOString(),
+        maturityScore,
+        diagnostic: parsed.data.diagnostic,
+      },
+    ];
+  }
+
+  const plan = existing
+    ? store.update('enterprisePlans', String(existing.id), update)
+    : store.create('enterprisePlans', update);
+  if (!plan) return res.status(500).json({ error: 'Could not save the enterprise development plan.' });
+  return res.json({ plan });
 });
 
 app.get('/api/admin/users', requireAuth, requireRole('admin'), (_req, res) => {
@@ -456,6 +533,7 @@ app.get('/api/admin/reports', requireAuth, requireRole('admin'), (_req, res) => 
 
 const courseTitleSchema = z.string().trim().min(3).max(120);
 const courseCategorySchema = z.string().trim().min(2).max(80);
+const courseLanguageSchema = z.string().trim().min(2).max(60);
 const courseDescriptionSchema = z.string().trim().max(2000);
 const courseImageSchema = z.string().max(3_000_000).regex(/^data:image\/(jpeg|png);base64,/);
 const courseLessonSchema = z.object({
@@ -483,6 +561,7 @@ const courseSkillsSchema = z.array(z.string().trim().min(2).max(80)).max(12)
 const courseSchema = z.object({
   title: courseTitleSchema,
   category: courseCategorySchema,
+  language: courseLanguageSchema.default('English'),
   description: courseDescriptionSchema.default(''),
   objectives: courseDescriptionSchema.default(''),
   skills: courseSkillsSchema.default([]),
@@ -495,6 +574,7 @@ const courseSchema = z.object({
 const courseUpdateSchema = z.object({
   title: courseTitleSchema.optional(),
   category: courseCategorySchema.optional(),
+  language: courseLanguageSchema.optional(),
   description: courseDescriptionSchema.optional(),
   objectives: courseDescriptionSchema.optional(),
   skills: courseSkillsSchema.optional(),
@@ -512,6 +592,35 @@ const jobSchema = z.object({
   type: z.enum(['Full-time', 'Part-time', 'Contract', 'Project']).default('Full-time'),
   status: z.enum(['open', 'closed']).default('open'),
 });
+const enterpriseDiagnosticSchema = z.object({
+  registrationLegalForm: z.number().int().min(1).max(5),
+  managementGovernance: z.number().int().min(1).max(5),
+  financeRecordKeeping: z.number().int().min(1).max(5),
+  marketReadiness: z.number().int().min(1).max(5),
+  technologyAdoption: z.number().int().min(1).max(5),
+  skillsProfile: z.number().int().min(1).max(5),
+  regulatoryCompliance: z.number().int().min(1).max(5),
+  productionCapability: z.number().int().min(1).max(5),
+  logistics: z.number().int().min(1).max(5),
+  fundingReadiness: z.number().int().min(1).max(5),
+  digitalMaturity: z.number().int().min(1).max(5),
+});
+const enterprisePlanUpdateSchema = z.object({
+  businessName: z.string().trim().min(2).max(120).optional(),
+  legalForm: z.string().trim().max(100).optional(),
+  province: z.string().trim().max(80).optional(),
+  sector: z.string().trim().max(120).optional(),
+  productsServices: z.string().trim().max(500).optional(),
+  businessDescription: z.string().trim().max(1000).optional(),
+  diagnostic: enterpriseDiagnosticSchema.optional(),
+  fundingChecklist: z.array(z.enum([
+    'registration',
+    'financial-records',
+    'business-plan',
+    'cashflow-forecast',
+  ])).max(4).optional(),
+  mentorRequested: z.boolean().optional(),
+}).refine((data) => Object.keys(data).length > 0);
 const categorySchema = z.object({ name: z.string().trim().min(2).max(80), slug: z.string().trim().regex(/^[a-z0-9-]+$/) });
 
 const videoUploadSchema = z.object({
@@ -1065,6 +1174,218 @@ const assessmentSchema = z.object({
   passingScore: z.number().int().min(1).max(100),
 });
 
+function getTrainerAnalyticsScope(ownerId: string) {
+  const courses = store.list('courses').filter((course) =>
+    course.ownerId === ownerId && course.status === 'approved');
+  const coursesById = new Map(courses.map((course) => [String(course.id), course]));
+  const learningUserIds = new Set(
+    store.users.all()
+      .filter((user) => user.role === 'learner')
+      .map((user) => user.id),
+  );
+  const assessmentCourseIds = new Map(
+    store.list('assessments')
+      .filter((assessment) => {
+        const course = coursesById.get(String(assessment.courseId ?? ''));
+        return course && assessment.ownerId === ownerId && assessment.ownerId === course.ownerId;
+      })
+      .map((assessment) => [String(assessment.id), String(assessment.courseId)] as const),
+  );
+  return { courses, coursesById, learningUserIds, assessmentCourseIds };
+}
+
+function getRecentActiveLearnersByCourse(
+  coursesById: Map<string, Record<string, unknown>>,
+  learningUserIds: Set<string>,
+  assessmentCourseIds: Map<string, string>,
+) {
+  const activeSince = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const activeLearners = new Set<string>();
+  const activeLearnersByCourse = new Map<string, Set<string>>();
+
+  function recordActiveLearner(courseId: string, userId: string) {
+    activeLearners.add(userId);
+    const learners = activeLearnersByCourse.get(courseId) ?? new Set<string>();
+    learners.add(userId);
+    activeLearnersByCourse.set(courseId, learners);
+  }
+
+  for (const record of store.list('progress')) {
+    const courseId = String(record.courseId ?? '');
+    const userId = String(record.userId ?? '');
+    if (!coursesById.has(courseId) || !learningUserIds.has(userId)) continue;
+    const occurredAt = Date.parse(String(record.updatedAt ?? record.createdAt ?? ''));
+    if (Number.isFinite(occurredAt) && occurredAt >= activeSince && occurredAt <= Date.now()) {
+      recordActiveLearner(courseId, userId);
+    }
+  }
+
+  for (const attempt of store.list('attempts')) {
+    const courseId = assessmentCourseIds.get(String(attempt.assessmentId ?? ''));
+    const userId = String(attempt.userId ?? '');
+    const score = attempt.score;
+    if (!courseId || !learningUserIds.has(userId) || typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 100) continue;
+    const occurredAt = Date.parse(String(attempt.createdAt ?? ''));
+    if (Number.isFinite(occurredAt) && occurredAt >= activeSince && occurredAt <= Date.now()) {
+      recordActiveLearner(courseId, userId);
+    }
+  }
+
+  return { activeLearners, activeLearnersByCourse };
+}
+
+app.get('/api/trainer/analytics', requireAuth, requireRole('trainer'), (req, res) => {
+  const ownerId = String(res.locals.user.id);
+  const { courses, coursesById, learningUserIds, assessmentCourseIds } = getTrainerAnalyticsScope(ownerId);
+  const progressByCourse = new Map<string, Map<string, Record<string, unknown>>>();
+  const attemptStatsByCourse = new Map<string, { count: number; scoreTotal: number; passed: number }>();
+  const { activeLearners, activeLearnersByCourse } = getRecentActiveLearnersByCourse(
+    coursesById,
+    learningUserIds,
+    assessmentCourseIds,
+  );
+
+  for (const record of store.list('progress')) {
+    const courseId = String(record.courseId ?? '');
+    const userId = String(record.userId ?? '');
+    if (!coursesById.has(courseId) || !learningUserIds.has(userId)) continue;
+    const courseProgress = progressByCourse.get(courseId) ?? new Map<string, Record<string, unknown>>();
+    if (!courseProgress.has(userId)) courseProgress.set(userId, record);
+    progressByCourse.set(courseId, courseProgress);
+  }
+
+  for (const attempt of store.list('attempts')) {
+    const courseId = assessmentCourseIds.get(String(attempt.assessmentId ?? ''));
+    const userId = String(attempt.userId ?? '');
+    const score = attempt.score;
+    if (!courseId || !learningUserIds.has(userId) || typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 100) continue;
+    const stats = attemptStatsByCourse.get(courseId) ?? { count: 0, scoreTotal: 0, passed: 0 };
+    stats.count += 1;
+    stats.scoreTotal += score;
+    if (attempt.passed === true) stats.passed += 1;
+    attemptStatsByCourse.set(courseId, stats);
+  }
+
+  const certificatesByCourse = new Map<string, number>();
+  for (const certificate of store.list('certificates')) {
+    const courseId = String(certificate.courseId ?? '');
+    const userId = String(certificate.userId ?? '');
+    if (!coursesById.has(courseId) || !learningUserIds.has(userId)) continue;
+    certificatesByCourse.set(courseId, (certificatesByCourse.get(courseId) ?? 0) + 1);
+  }
+
+  let totalEnrollments = 0;
+  let completionTotal = 0;
+  let completedEnrollmentCount = 0;
+  let totalAttempts = 0;
+  let scoreTotal = 0;
+  let passedAttempts = 0;
+  let certificatesEarned = 0;
+
+  const courseAnalytics = courses.map((course) => {
+    const courseId = String(course.id);
+    const lessons = Array.isArray(course.lessons) ? course.lessons : [];
+    const enrollments = [...(progressByCourse.get(courseId)?.values() ?? [])];
+    const completionCounts = lessons.map(() => 0);
+    let courseCompletionTotal = 0;
+
+    for (const enrollment of enrollments) {
+      const completedLessons = new Set(
+        Array.isArray(enrollment.completedLessons)
+          ? enrollment.completedLessons.filter((index): index is number =>
+            typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < lessons.length)
+          : [],
+      );
+      completedLessons.forEach((index) => {
+        completionCounts[index] = (completionCounts[index] ?? 0) + 1;
+      });
+      if (lessons.length > 0) {
+        courseCompletionTotal += completedLessons.size / lessons.length;
+        completionTotal += completedLessons.size / lessons.length;
+        completedEnrollmentCount += 1;
+      }
+    }
+
+    const attempts = attemptStatsByCourse.get(courseId) ?? { count: 0, scoreTotal: 0, passed: 0 };
+    const courseCertificates = certificatesByCourse.get(courseId) ?? 0;
+    totalEnrollments += enrollments.length;
+    totalAttempts += attempts.count;
+    scoreTotal += attempts.scoreTotal;
+    passedAttempts += attempts.passed;
+    certificatesEarned += courseCertificates;
+
+    return {
+      id: courseId,
+      title: String(course.title),
+      enrollmentCount: enrollments.length,
+      activeLearnerCount: activeLearnersByCourse.get(courseId)?.size ?? 0,
+      averageCompletionRate: enrollments.length && lessons.length
+        ? Math.round((courseCompletionTotal / enrollments.length) * 100)
+        : null,
+      lessons: lessons.map((lesson, index) => {
+        const completedCount = completionCounts[index] ?? 0;
+        return {
+          title: lesson && typeof lesson === 'object' && 'title' in lesson ? String(lesson.title) : `Lesson ${index + 1}`,
+          completedCount,
+          completionRate: enrollments.length ? Math.round((completedCount / enrollments.length) * 100) : null,
+        };
+      }),
+      assessment: {
+        attemptCount: attempts.count,
+        averageScore: attempts.count ? Math.round(attempts.scoreTotal / attempts.count) : null,
+        passedCount: attempts.passed,
+        passRate: attempts.count ? Math.round((attempts.passed / attempts.count) * 100) : null,
+      },
+      certificatesEarned: courseCertificates,
+    };
+  });
+
+  return res.json({
+    generatedAt: new Date().toISOString(),
+    activeLearnerWindowDays: 30,
+    summary: {
+      publishedCourses: courses.length,
+      enrollmentCount: totalEnrollments,
+      activeLearnerCount: activeLearners.size,
+      averageCompletionRate: completedEnrollmentCount
+        ? Math.round((completionTotal / completedEnrollmentCount) * 100)
+        : null,
+      assessmentAttemptCount: totalAttempts,
+      averageAssessmentScore: totalAttempts ? Math.round(scoreTotal / totalAttempts) : null,
+      assessmentPassRate: totalAttempts ? Math.round((passedAttempts / totalAttempts) * 100) : null,
+      certificatesEarned,
+    },
+    courses: courseAnalytics,
+  });
+});
+
+app.get('/api/trainer/analytics/active-learners', requireAuth, requireRole('trainer'), (_req, res) => {
+  const { courses, coursesById, learningUserIds, assessmentCourseIds } =
+    getTrainerAnalyticsScope(String(res.locals.user.id));
+  const { activeLearnersByCourse } = getRecentActiveLearnersByCourse(
+    coursesById,
+    learningUserIds,
+    assessmentCourseIds,
+  );
+  const learnerNames = new Map(
+    store.users.all()
+      .filter((user) => user.role === 'learner')
+      .map((user) => [user.id, user.name]),
+  );
+  return res.json({
+    activeLearnerWindowDays: 30,
+    courses: courses.map((course) => ({
+      id: String(course.id),
+      title: String(course.title),
+      activeLearners: [...(activeLearnersByCourse.get(String(course.id)) ?? [])]
+        .map((userId) => learnerNames.get(userId))
+        .filter((name): name is string => typeof name === 'string' && name.trim().length > 0)
+        .sort((left, right) => left.localeCompare(right))
+        .map((name) => ({ name })),
+    })),
+  });
+});
+
 app.get('/api/courses/:id/assessments', requireAuth, requireRole('trainer', 'admin'), (req, res) => {
   const courseId = String(req.params.id);
   const course = store.list('courses').find((item) => item.id === courseId);
@@ -1107,11 +1428,12 @@ app.get('/api/courses/:id/learner-assessment', requireAuth, requireRole('learner
 
 app.post('/api/courses/:id/enrol', requireAuth, requireRole('learner', 'employer'), (req, res) => {
   const courseId = String(req.params.id);
+  const userId = String(res.locals.user.id);
   const course = store.list('courses').find((item) => item.id === courseId && item.status === 'approved');
   if (!course) return res.status(404).json({ error: 'Published course not found' });
 
   const existing = store.list('progress').find((item) =>
-    item.courseId === courseId && item.userId === res.locals.user.id);
+    item.courseId === courseId && item.userId === userId);
   if (existing) {
     const progress = existing.enrolledAt
       ? existing
@@ -1122,11 +1444,52 @@ app.post('/api/courses/:id/enrol', requireAuth, requireRole('learner', 'employer
 
   const progress = store.create('progress', {
     courseId,
-    userId: res.locals.user.id,
+    userId,
     completedLessons: [],
     enrolledAt: new Date().toISOString(),
   });
+  addNotification(userId, 'Course enrolled', `You are enrolled in ${String(course.title)}.`);
   return res.status(201).json({ progress, enrolled: true });
+});
+
+app.get('/api/me/progress', requireAuth, requireRole('learner', 'employer'), (req, res) => {
+  const userId = String(res.locals.user.id);
+  const coursesById = new Map(
+    store.list('courses')
+      .filter((course) => course.status === 'approved')
+      .map((course) => [String(course.id), course]),
+  );
+  const courses = store.list('progress')
+    .filter((record) => record.userId === userId && coursesById.has(String(record.courseId)))
+    .sort((a, b) => String(b.updatedAt ?? b.createdAt ?? '').localeCompare(String(a.updatedAt ?? a.createdAt ?? '')))
+    .map((record) => {
+      const course = coursesById.get(String(record.courseId))!;
+      const lessons = Array.isArray(course.lessons) ? course.lessons : [];
+      const lastLessonIndex = Number.isInteger(record.lastLessonIndex)
+        && Number(record.lastLessonIndex) >= 0
+        && Number(record.lastLessonIndex) < lessons.length
+        ? Number(record.lastLessonIndex)
+        : null;
+      const completedLessons = Array.isArray(record.completedLessons)
+        ? [...new Set(record.completedLessons.filter((index): index is number =>
+          Number.isInteger(index) && index >= 0 && index < lessons.length))]
+          .sort((a, b) => a - b)
+        : [];
+      return {
+        course,
+        completedLessons,
+        progressPercent: lessons.length ? Math.round(completedLessons.length / lessons.length * 100) : 0,
+        nextLessonIndex: Math.min(completedLessons.length, Math.max(0, lessons.length - 1)),
+        lastLessonIndex,
+        resumeLessonIndex: lastLessonIndex !== null
+          ? Math.max(
+            Math.min(completedLessons.length, Math.max(0, lessons.length - 1)),
+            lastLessonIndex,
+          )
+          : Math.min(completedLessons.length, Math.max(0, lessons.length - 1)),
+      };
+    });
+  return res.json({ courses });
 });
 
 app.get('/api/courses/:id/progress', requireAuth, requireRole('learner', 'employer'), (req, res) => {
@@ -1140,10 +1503,46 @@ app.get('/api/courses/:id/progress', requireAuth, requireRole('learner', 'employ
     ? savedProgress.completedLessons.filter((index): index is number =>
       Number.isInteger(index) && index >= 0 && index < lessons.length)
     : [];
+  const nextLessonIndex = Math.min(completedLessons.length, Math.max(0, lessons.length - 1));
+  const savedLessonIndex = savedProgress?.lastLessonIndex;
+  const resumeLessonIndex = Number.isInteger(savedLessonIndex)
+    && Number(savedLessonIndex) >= 0
+    && Number(savedLessonIndex) < lessons.length
+    ? Math.max(nextLessonIndex, Number(savedLessonIndex))
+    : nextLessonIndex;
   return res.json({
     completedLessons,
-    nextLessonIndex: Math.min(completedLessons.length, Math.max(0, lessons.length - 1)),
+    nextLessonIndex,
+    resumeLessonIndex,
   });
+});
+
+app.put('/api/courses/:id/progress', requireAuth, requireRole('learner', 'employer'), (req, res) => {
+  const input = z.object({ lessonIndex: z.number().int().min(0) }).safeParse(req.body);
+  if (!input.success) return res.status(400).json({ error: 'A valid lesson index is required' });
+
+  const courseId = String(req.params.id);
+  const course = store.list('courses').find((item) => item.id === courseId && item.status === 'approved');
+  if (!course) return res.status(404).json({ error: 'Published course not found' });
+  const lessons = Array.isArray(course.lessons) ? course.lessons : [];
+  if (input.data.lessonIndex >= lessons.length) {
+    return res.status(400).json({ error: 'Lesson index is invalid' });
+  }
+
+  const userId = String(res.locals.user.id);
+  const existing = store.list('progress').find((item) =>
+    item.courseId === courseId && item.userId === userId);
+  const progress = existing
+    ? store.update('progress', String(existing.id), { lastLessonIndex: input.data.lessonIndex })
+    : store.create('progress', {
+      courseId,
+      userId,
+      completedLessons: [],
+      enrolledAt: new Date().toISOString(),
+      lastLessonIndex: input.data.lessonIndex,
+    });
+  if (!progress) return res.status(500).json({ error: 'Course position could not be saved' });
+  return res.json({ progress });
 });
 
 app.post('/api/courses/:id/lessons/:lessonIndex/complete', requireAuth, requireRole('learner', 'employer'), (req, res) => {
@@ -1156,11 +1555,13 @@ app.post('/api/courses/:id/lessons/:lessonIndex/complete', requireAuth, requireR
     return res.status(400).json({ error: 'Lesson index is invalid' });
   }
 
+  const userId = String(res.locals.user.id);
   const existing = store.list('progress').find((item) =>
-    item.courseId === courseId && item.userId === res.locals.user.id);
+    item.courseId === courseId && item.userId === userId);
   const completedLessons = Array.isArray(existing?.completedLessons)
     ? existing.completedLessons.filter((index): index is number => Number.isInteger(index))
     : [];
+  const newlyCompleted = !completedLessons.includes(lessonIndex);
   if (!completedLessons.includes(lessonIndex)) {
     if (lessonIndex !== completedLessons.length) {
       return res.status(409).json({ error: 'Complete lessons in order' });
@@ -1168,9 +1569,20 @@ app.post('/api/courses/:id/lessons/:lessonIndex/complete', requireAuth, requireR
     completedLessons.push(lessonIndex);
   }
   const progress = existing
-    ? store.update('progress', String(existing.id), { completedLessons })
-    : store.create('progress', { courseId, userId: res.locals.user.id, completedLessons });
+    ? store.update('progress', String(existing.id), {
+      completedLessons,
+      lastLessonIndex: Math.min(lessonIndex + 1, Math.max(0, lessons.length - 1)),
+    })
+    : store.create('progress', {
+      courseId,
+      userId,
+      completedLessons,
+      lastLessonIndex: Math.min(lessonIndex + 1, Math.max(0, lessons.length - 1)),
+    });
   if (!progress) return res.status(500).json({ error: 'Lesson progress could not be saved' });
+  if (newlyCompleted) {
+    addNotification(userId, 'Course progress saved', `Your ${String(course.title)} progress has been updated.`);
+  }
   return res.json({
     progress,
     completed: completedLessons.length === lessons.length,

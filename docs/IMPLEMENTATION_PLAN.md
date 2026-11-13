@@ -8,7 +8,7 @@
 4. Add application structure for routes, components, hooks, services, constants, and types.
 5. Establish environment variable loading and API configuration.
 6. Create the backend TypeScript/Express foundation.
-7. Configure PostgreSQL/Neon and Prisma when database credentials are available.
+7. Establish the Prisma schema and initial migration, then migrate JSON persistence to PostgreSQL/Neon using the approved sequence in [DATABASE_MIGRATION.md](./DATABASE_MIGRATION.md).
 8. Verify the Expo app, backend startup, lint, TypeScript, and tests.
 
 Exit criteria:
@@ -18,6 +18,7 @@ Exit criteria:
 - NativeWind styles render on Android, iOS, and web.
 - Core routes and navigation compile.
 - Environment requirements are documented.
+- The database migration is not complete until JSON data is imported and API persistence is verified; do not apply migrations to an unapproved target.
 
 ## Phase 2 — Authentication and Roles
 

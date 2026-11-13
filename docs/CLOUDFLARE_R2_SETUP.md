@@ -40,6 +40,7 @@ Direct uploads originate from the mobile app/browser, not the Express server. Co
 [
   {
     "AllowedOrigins": [
+      "http://localhost:8081",
       "http://localhost:19006",
       "https://<your-production-app-origin>"
     ],

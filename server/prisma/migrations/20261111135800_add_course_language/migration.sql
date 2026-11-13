@@ -1,0 +1,2 @@
+ALTER TABLE "courses"
+ADD COLUMN "language" VARCHAR(60) NOT NULL DEFAULT 'English';

@@ -40,8 +40,7 @@ export default function WelcomeScreen() {
               </Text>
             </View>
             <View className="gap-3">
-              <Button label="Get started" onPress={() => router.push('/onboarding')} gold />
-              <Button label="I already have an account" onPress={() => router.push('/login')} secondary />
+              <Button label="Get started" onPress={() => router.push('/login')} gold />
             </View>
           </View>
         </ScrollView>

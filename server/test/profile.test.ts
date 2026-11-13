@@ -34,10 +34,13 @@ before(async () => {
       province: 'Gauteng',
       category: 'Farmer',
       primaryInterest: 'Soil health',
+      language: 'isiXhosa',
     }),
   });
   assert.equal(response.status, 201);
-  token = (await response.json() as { token: string }).token;
+  const registeredUser = await response.json() as { token: string; user: { language: string } };
+  token = registeredUser.token;
+  assert.equal(registeredUser.user.language, 'isiXhosa');
 });
 
 after(async () => {
@@ -45,6 +48,20 @@ after(async () => {
     server.close((error) => error ? reject(error) : resolve());
   });
   rmSync(testDirectory, { recursive: true, force: true });
+});
+
+test('registration rejects unsupported preferred languages', async () => {
+  const response = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: 'Invalid Language',
+      email: 'invalid-language@example.com',
+      password: initialPassword,
+      language: 'Klingon',
+    }),
+  });
+  assert.equal(response.status, 400);
 });
 
 test('registration details can be edited and retrieved from the authenticated profile', async () => {
@@ -58,6 +75,7 @@ test('registration details can be edited and retrieved from the authenticated pr
       province: 'Western Cape',
       category: 'Agricultural worker',
       primaryInterest: 'Irrigation',
+      language: 'Setswana',
     }),
   });
   assert.equal(updateResponse.status, 200);
@@ -68,6 +86,7 @@ test('registration details can be edited and retrieved from the authenticated pr
   assert.equal(updatedUser.province, 'Western Cape');
   assert.equal(updatedUser.category, 'Agricultural worker');
   assert.equal(updatedUser.primaryInterest, 'Irrigation');
+  assert.equal(updatedUser.language, 'Setswana');
   assert.equal('passwordHash' in updatedUser, false);
 
   const profileResponse = await fetch(`${baseUrl}/api/me`, {
@@ -78,6 +97,7 @@ test('registration details can be edited and retrieved from the authenticated pr
   assert.equal(savedUser.name, 'Updated Profile Name');
   assert.equal(savedUser.email, 'profile-updated@example.com');
   assert.equal(savedUser.primaryInterest, 'Irrigation');
+  assert.equal(savedUser.language, 'Setswana');
 });
 
 test('profile updates require authentication and a valid name', async () => {
@@ -114,6 +134,7 @@ test('profile updates reject an email already used by another account', async ()
     }),
   });
   assert.equal(secondAccountResponse.status, 201);
+  assert.equal((await secondAccountResponse.json() as { user: { language: string } }).user.language, 'English');
 
   const response = await fetch(`${baseUrl}/api/me`, {
     method: 'PATCH',

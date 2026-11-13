@@ -1,11 +1,11 @@
 # AgriLearn Role Capabilities Audit
 
-**Audit date:** 2026-11-06  
+**Audit date:** 2026-11-11
 **Scope:** Compare the supplied Learner, Agricultural SMME / Employer, Content Author / Trainer, and Administrator responsibilities with the mobile app, backend routes, persistence model, tests, and current documentation.
 
 ## Executive Summary
 
-AgriLearn has a working Expo/React Native TypeScript foundation, authentication and profile APIs, an API-backed published course discovery and learner enrollment/completion/certificate flow, a trainer course-authoring workflow, and a learner-facing opportunities/application flow. These are meaningful foundations, but the four role descriptions are not yet implemented end-to-end.
+AgriLearn has a working Expo/React Native TypeScript foundation, authentication and profile APIs, an API-backed published course discovery and learner enrollment/completion/certificate flow, a trainer course-authoring workflow, a learner-facing opportunities/application flow, and a handbook-aligned SMME diagnostic and growth-tracking workspace. These are meaningful foundations, but the four role descriptions are not yet implemented end-to-end.
 
 The largest gaps are learner-specific in-progress course lists and progress metrics, employer-facing management/discovery screens, and an administrator workspace that can perform the actions represented by its labels. Lesson completion, assessment, certificate issuance, and earned course skills are implemented for the lesson-to-certificate path. The backend currently persists JSON files rather than using the required PostgreSQL/Neon database. Passing builds and tests establish that existing code works; they do not establish completion of these missing workflows.
 
@@ -29,21 +29,21 @@ The largest gaps are learner-specific in-progress course lists and progress metr
 - Invitation response exists as an API operation, but learners have no invitation list or accept/decline interface.
 - There is no learner-controlled permission or consent workflow for sharing profile skills or credentials.
 
-### 2. Agricultural SMME / Employer — Partial, mostly backend-only
+### 2. Agricultural SMME / Employer — SMME journey implemented; employer operations remain partial
 
 **Present**
 
 - Employers can register and update the general account profile.
+- The SMME workspace persists a private business profile, an 11-area enterprise diagnostic and repeat-assessment history, highlights low-scoring areas, and recommends matching published courses. It tracks funding-preparation checklist items and records a mentor need without claiming that a mentor has been assigned.
+- The workspace explains that mentor matching, funding applications, and buyer-marketplace publishing are not connected. See [smme.tsx](../mobile/src/app/smme.tsx), [index.ts](../server/src/index.ts), and [smme.test.ts](../server/test/smme.test.ts).
 - Backend tests verify employers can create open jobs, retrieve applications related to their own jobs, and submit applications as applicants; learners can apply to published jobs. Job skills are persisted and displayed before the application action. See [index.ts](../server/src/index.ts), [roles.test.ts](../server/test/roles.test.ts), and [opportunities.test.ts](../server/test/opportunities.test.ts).
 
 **Gaps**
 
-- There is no business-profile model or business-profile screen.
-- No employer workspace is connected to the app. Employers have no UI to create, edit, publish, close, or manage vacancies.
+- The employer workspace still needs UI to create, edit, publish, close, and manage vacancies.
 - Employers can read applications through the API but cannot change application status, shortlist candidates, or accept/reject applications; these actions also lack backend routes.
 - No candidate discovery or permission-aware viewing of learner skills/certificates exists.
 - Invitation records have no listing endpoint or employer/learner management screens. The API does not enforce a learner sharing preference before an invitation is sent; invitation workflows lack test coverage.
-- The app routes employers to the general learner dashboard, whose course and progress data are sample data rather than persisted learner data.
 
 ### 3. Content Author / Trainer — Substantial authoring foundation; learner analytics missing
 
@@ -52,10 +52,10 @@ The largest gaps are learner-specific in-progress course lists and progress metr
 - Trainers can create and edit owned course drafts, add lessons and resources, author assessments, submit content for review, and view their content/statuses.
 - Video and PDF uploads are supported with file type and size checks. Server tests cover trainer ownership, assessment validation, submission, and file handling. See [create-module.tsx](../mobile/src/app/create-module.tsx), [content.tsx](../mobile/src/app/content.tsx), [trainer-workflow.test.ts](../server/test/trainer-workflow.test.ts), and [uploads.test.ts](../server/test/uploads.test.ts).
 - Browser testing verified the trainer app can create a course with skills, lesson, and assessment and submit it to review; it appears under My Content as Under Review.
+- The Reviews tab provides aggregate learner enrolment, recent activity, lesson completion, assessment performance, and certificate counts for the trainer's approved courses. Selecting Active learners makes a separate request for learner names, scoped to recent activity on those approved courses; the aggregate endpoint remains identity-free, and neither endpoint returns emails, learner IDs, or raw answers. See [trainer-analytics.tsx](../mobile/src/app/trainer-analytics.tsx), [index.ts](../server/src/index.ts), and [trainer-analytics.test.ts](../server/test/trainer-analytics.test.ts).
 
 **Gaps**
 
-- Learner progress and assessment attempts are not available as trainer analytics. The trainer dashboard explicitly says analytics will appear once activity tracking exists.
 - There is no learner monitoring authorization/consent workflow.
 
 ### 4. Administrator — Dashboard overview; management workflows incomplete

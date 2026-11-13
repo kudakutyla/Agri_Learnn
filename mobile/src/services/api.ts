@@ -47,6 +47,7 @@ export const api = {
     province?: string;
     category?: string;
     primaryInterest?: string;
+    language?: string;
   }) =>
     request<{ user: Profile; token: string }>('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: { email: string; password: string }) =>
@@ -62,6 +63,19 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify(data),
       }),
+  },
+  smme: {
+    plan: {
+      get: () => request<{ plan: EnterprisePlan | null }>('/api/smme/plan'),
+      update: (data: EnterprisePlanUpdate) =>
+        request<{ plan: EnterprisePlan }>('/api/smme/plan', {
+          method: 'PUT',
+          body: JSON.stringify(data),
+        }),
+    },
+  },
+  notifications: {
+    list: () => request<{ notifications: Notification[] }>('/api/me/notifications'),
   },
   admin: {
     overview: () => request<AdminOverview>('/api/admin/overview'),
@@ -81,6 +95,8 @@ export const api = {
     courses: {
       list: () => request<{ courses: Course[] }>('/api/trainer/courses'),
     },
+    analytics: () => request<TrainerAnalytics>('/api/trainer/analytics'),
+    activeLearners: () => request<TrainerActiveLearners>('/api/trainer/analytics/active-learners'),
     videos: {
       list: () => request<{ videos: VideoRecord[] }>('/api/trainer/videos'),
     },
@@ -161,7 +177,14 @@ export const api = {
       enrol: (courseId: string) =>
         request<{ progress: CourseProgress; enrolled: boolean }>(`/api/courses/${courseId}/enrol`, { method: 'POST' }),
       progress: (courseId: string) =>
-        request<{ completedLessons: number[]; nextLessonIndex: number }>(`/api/courses/${courseId}/progress`),
+        request<{ completedLessons: number[]; nextLessonIndex: number; resumeLessonIndex: number }>(
+          `/api/courses/${courseId}/progress`,
+        ),
+      savePosition: (courseId: string, lessonIndex: number) =>
+        request<{ progress: CourseProgress }>(`/api/courses/${courseId}/progress`, {
+          method: 'PUT',
+          body: JSON.stringify({ lessonIndex }),
+        }),
       complete: (courseId: string, lessonIndex: number) =>
         request<{ progress: CourseProgress; completed: boolean }>(
           `/api/courses/${courseId}/lessons/${lessonIndex}/complete`,
@@ -170,6 +193,7 @@ export const api = {
     },
     remove: (id: string) => request<void>(`/api/courses/${id}`, { method: 'DELETE' }),
   },
+  learningProgress: () => request<{ courses: CourseProgressSummary[] }>('/api/me/progress'),
   assessments: {
     submit: (assessmentId: string, answers: number[]) =>
       request<{ attempt: AssessmentAttempt; certificate: Certificate | null }>(
@@ -199,6 +223,14 @@ export type Profile = {
   province: string;
   category: string;
   primaryInterest: string;
+  language: string;
+  createdAt: string;
+};
+
+export type Notification = {
+  id: string;
+  title: string;
+  message: string;
   createdAt: string;
 };
 
@@ -206,6 +238,43 @@ export type ProfileUpdate = Omit<Profile, 'id' | 'role' | 'createdAt'> & {
   currentPassword?: string;
   newPassword?: string;
 };
+
+export type EnterpriseDiagnostic = {
+  registrationLegalForm: number;
+  managementGovernance: number;
+  financeRecordKeeping: number;
+  marketReadiness: number;
+  technologyAdoption: number;
+  skillsProfile: number;
+  regulatoryCompliance: number;
+  productionCapability: number;
+  logistics: number;
+  fundingReadiness: number;
+  digitalMaturity: number;
+};
+
+export type EnterprisePlan = {
+  id: string;
+  ownerId: string;
+  businessName: string;
+  legalForm?: string;
+  province?: string;
+  sector?: string;
+  productsServices?: string;
+  businessDescription?: string;
+  diagnostic?: EnterpriseDiagnostic;
+  assessmentHistory?: {
+    submittedAt: string;
+    maturityScore: number;
+    diagnostic: EnterpriseDiagnostic;
+  }[];
+  fundingChecklist?: string[];
+  mentorRequested?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type EnterprisePlanUpdate = Partial<Omit<EnterprisePlan, 'id' | 'ownerId' | 'assessmentHistory' | 'createdAt' | 'updatedAt'>>;
 
 export type AdminOverview = {
   metrics: {
@@ -232,6 +301,45 @@ export type AdminReports = {
   averageCompletionRate: number | null;
   completionRateEnrollmentCount: number;
   activeOpportunities: number;
+};
+
+export type TrainerAnalytics = {
+  generatedAt: string;
+  activeLearnerWindowDays: number;
+  summary: {
+    publishedCourses: number;
+    enrollmentCount: number;
+    activeLearnerCount: number;
+    averageCompletionRate: number | null;
+    assessmentAttemptCount: number;
+    averageAssessmentScore: number | null;
+    assessmentPassRate: number | null;
+    certificatesEarned: number;
+  };
+  courses: {
+    id: string;
+    title: string;
+    enrollmentCount: number;
+    activeLearnerCount: number;
+    averageCompletionRate: number | null;
+    lessons: { title: string; completedCount: number; completionRate: number | null }[];
+    assessment: {
+      attemptCount: number;
+      averageScore: number | null;
+      passedCount: number;
+      passRate: number | null;
+    };
+    certificatesEarned: number;
+  }[];
+};
+
+export type TrainerActiveLearners = {
+  activeLearnerWindowDays: number;
+  courses: {
+    id: string;
+    title: string;
+    activeLearners: { name: string }[];
+  }[];
 };
 
 export type CourseReview = {
@@ -329,6 +437,7 @@ export type Course = {
   ownerId: string;
   title: string;
   category: string;
+  language?: string;
   description: string;
   objectives?: string;
   skills?: string[];
@@ -384,4 +493,13 @@ export type CourseProgress = {
   courseId: string;
   userId: string;
   completedLessons: number[];
+};
+
+export type CourseProgressSummary = {
+  course: Course;
+  completedLessons: number[];
+  progressPercent: number;
+  nextLessonIndex: number;
+  resumeLessonIndex: number;
+  lastLessonIndex: number | null;
 };

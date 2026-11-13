@@ -61,19 +61,19 @@ export default function AdminReportsScreen() {
     : `${report.averageCompletionRate}%`;
 
   return (
-    <View className="flex-1 bg-[#F7F7F2]">
+    <View className="flex-1 bg-[#F7F7F2] dark:bg-[#101814]">
       <ScrollView
         className="flex-1"
         contentContainerClassName="px-4 pb-5 pt-12"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void loadReport(true); }} />}
       >
         <View className="mb-5">
-          <Text className="text-[22px] font-extrabold leading-7 text-[#252B27]">Reports &amp; analytics</Text>
-          <Text className="mt-1 text-[9px] text-[#78817B]">Platform performance · {reportMonth}</Text>
+          <Text className="text-[22px] font-extrabold leading-7 text-[#252B27] dark:text-[#F1F4F1]">Reports &amp; analytics</Text>
+          <Text className="mt-1 text-[9px] text-[#78817B] dark:text-[#AAB6AD]">Platform performance · {reportMonth}</Text>
         </View>
 
         {error ? (
-          <View className="mb-4 rounded-xl border border-[#F0D1C8] bg-white p-4">
+          <View className="mb-4 rounded-xl border border-[#F0D1C8] bg-white p-4 dark:bg-[#1D2922]">
             <Text accessibilityRole="alert" className="text-[10px] leading-4 text-[#9A382C]">{error}</Text>
             <Pressable accessibilityRole="button" onPress={() => { void loadReport(); }} className="mt-3 self-start rounded-lg bg-[#14543E] px-4 py-2">
               <Text className="text-[9px] font-bold text-white">Try again</Text>
@@ -94,10 +94,10 @@ export default function AdminReportsScreen() {
           </View>
         </View>
 
-        <Text className="mb-2 mt-5 text-[14px] font-extrabold text-[#252B27]">Learning performance</Text>
-        <View className="rounded-xl border border-[#E3E8E2] bg-white px-3 pb-2 pt-4">
+        <Text className="mb-2 mt-5 text-[14px] font-extrabold text-[#252B27] dark:text-[#F1F4F1]">Learning performance</Text>
+        <View className="rounded-xl border border-[#E3E8E2] bg-white px-3 pb-2 pt-4 dark:border-[#35443A] dark:bg-[#1D2922]">
           {loading ? (
-            <Text className="py-8 text-center text-[10px] text-[#78817B]">Loading weekly learning activity…</Text>
+            <Text className="py-8 text-center text-[10px] text-[#78817B] dark:text-[#AAB6AD]">Loading weekly learning activity…</Text>
           ) : report ? (
             <>
               <View accessibilityLabel={`Unique active learners over the last seven days: ${report.learningPerformance.map((item) => `${item.day} ${item.activeLearners}`).join(', ')}`} className="h-[94px] flex-row items-end justify-around">
@@ -111,7 +111,7 @@ export default function AdminReportsScreen() {
                   </View>
                 ))}
               </View>
-              <View className="mt-1 flex-row justify-around border-t border-[#E9EDE9] pt-1.5">
+              <View className="mt-1 flex-row justify-around border-t border-[#E9EDE9] pt-1.5 dark:border-[#35443A]">
                 {report.learningPerformance.map((item, index) => (
                   <Text key={`${item.day}-label-${index}`} className={`flex-1 text-center text-[7px] ${index === report.learningPerformance.length - 1 ? 'font-bold text-[#14543E]' : 'text-[#89918B]'}`}>
                     {item.day}
@@ -120,11 +120,11 @@ export default function AdminReportsScreen() {
               </View>
             </>
           ) : (
-            <Text className="py-8 text-center text-[10px] text-[#78817B]">Weekly activity is unavailable.</Text>
+            <Text className="py-8 text-center text-[10px] text-[#78817B] dark:text-[#AAB6AD]">Weekly activity is unavailable.</Text>
           )}
         </View>
 
-        <View className="mt-2 rounded-xl border border-[#E3E8E2] bg-white px-3">
+        <View className="mt-2 rounded-xl border border-[#E3E8E2] bg-white px-3 dark:border-[#35443A] dark:bg-[#1D2922]">
           <MetricRow
             icon="♧"
             label="Certificates issued"

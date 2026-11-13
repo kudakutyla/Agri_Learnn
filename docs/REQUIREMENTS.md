@@ -15,41 +15,47 @@ Use this document to validate AgriLearn during development and acceptance testin
 | MOB-005 | The mobile interface follows the supplied design visually. | Welcome, onboarding, authentication, learner, employer, trainer, and admin flows use agreed AgriLearn colours, typography, spacing, and native components. | In progress |
 | MOB-006 | Core screens are responsive. | The primary screens have no overlap or clipped controls at tested phone sizes and orientations. | Implemented |
 | MOB-007 | Home and Profile provide their distinct screenshot-referenced layouts. | Home renders the learner dashboard with recommended courses that auto-advance and can be changed by swipe, arrows, or course indicators; its Skills Passport summary uses the same authenticated credential and earned-skill data as the Passport page; Home has a bell notification button and persistent light/dark theme toggle; Profile lets users edit registration name, email, mobile number, province, category, primary interest, and password while preserving server-controlled roles; account navigation/actions and sign-out work, and the selected bottom-navigation tab matches the active route. | Verified |
-| MOB-008 | Explore follows the supplied course-discovery layout. | Explore shows a searchable course catalogue of sample and API-published courses, selectable topic chips, a featured course, a popular-course list, clear loading/error states, and a working sort control. | Verified |
-| MOB-009 | Selecting a course in Explore opens its module information. | Featured, sample, and API-published course cards open details with accurate descriptions, skills, learning outcomes, lesson list, and course metadata. | Verified |
+| MOB-008 | Explore follows the supplied course-discovery layout. | Explore shows a searchable catalogue of approved API courses, selectable topic chips, a featured course, a popular-course list, clear loading/error/empty states, and a working sort control. Only courses with persisted backend records can be opened or enrolled in. | Verified |
+| MOB-009 | Selecting a course in Explore opens its module information. | Approved API course cards open details with accurate descriptions, skills, learning outcomes, lesson list, and course metadata. | Verified |
 | MOB-010 | The course information action opens course learning content. | Selecting “Enrol for free” on an approved course records an authenticated, idempotent learner enrolment and opens that course’s lessons; uploaded lesson videos can be played, and unavailable videos are identified clearly. | Verified |
-| MOB-011 | My Learning follows the supplied course-progress layout. | Screen shows In progress, Completed, and Saved tabs; summary metrics; course cover cards with status, next lesson, course skills, progress, and a Continue action; and an accessible shortcut to agricultural opportunities. Empty tabs show a clear message and Explore action. | Verified |
-| MOB-012 | Skills Passport follows the supplied credential layout. | Passport shows learner identity, credential-derived summary metrics, Skills/Credentials/History tabs, and truthful empty states when records are absent. | Implemented |
+| MOB-011 | My Learning follows the supplied course-progress layout. | Screen shows In progress, Completed, and Saved tabs; summary metrics; course cover cards with status, saved resume lesson, course skills, completed-lesson progress, and a Continue action; and an accessible shortcut to agricultural opportunities. Empty tabs show a clear message and Explore action. | Verified |
+| MOB-012 | Skills Passport follows the supplied credential layout. | Passport shows learner identity, credential-derived summary metrics, Skills/Credentials/History tabs, truthful empty states, selectable credentials with a certificate view, and PDF export. | Implemented |
 | MOB-013 | Course content opens a focused lesson page. | Lesson view follows the supplied design with progress, lesson number/title/duration, video or unavailable-media state, lesson information, reminder, and functioning Previous/Next navigation. | Implemented |
 | MOB-014 | Completing the final lesson leads to a test notice. | Final lesson completion is persisted, then a course-specific notice shows assessment expectations and Start test opens the real quiz. When quiz questions are not configured, the limitation is explained instead of launching a fake test. | Verified |
 | MOB-015 | Learners can access lesson PDF notes. | Approved course reading lessons show an Open PDF notes action; the course-file endpoint returns the PDF inline for the browser/device viewer and continues to enforce course publication and lesson-file checks. | Verified |
 | MOB-016 | Learners can download course videos for offline access. | Uploaded course videos can be saved to persistent device storage, downloaded status is shown, and saved videos play locally after reopening course content without a network connection. | In progress |
+| MOB-017 | Notifications are specific to the authenticated account. | Notifications are loaded from authenticated API data, generated for that account's registration/enrolment/lesson progress, and never include another user's notifications; loading, error, and empty states are shown. | Implemented |
+| MOB-018 | Learners can find agricultural learning content in a language they understand. | Trainers label a course's main content language; the Explore screen displays the language and filters published courses by the available language labels. Labels describe content but do not claim to translate it. | Implemented |
+| MOB-019 | Every account role can choose a light or dark appearance. | Learners, employers, and trainers can change the saved appearance preference from Profile; administrators can change it from Settings. The preference is restored at app startup and applied to primary role dashboards, shared navigation, profile/settings, and course-learning screens. | Implemented |
 
 ### Authentication
 
 | ID | Requirement | Test/Acceptance Criteria | Status |
 |---|---|---|---|
-| AUTH-001 | Users can register with valid details. | Registration creates one persistent user and reports duplicate/invalid input clearly. | Implemented |
-| AUTH-002 | Users can log in with valid credentials. | Valid credentials return an authenticated session; learners and employers land on Home, trainers on their course dashboard, and admins on the admin overview. | Implemented |
+| AUTH-001 | Users can register with valid details. | Registration requires a valid email, an 8–72 character password, matching password confirmation, and agreement to the terms before continuing; password and confirmation each have accessible show/hide controls, and invalid/duplicate input is reported clearly. | Implemented |
+| AUTH-002 | Users can log in with valid credentials. | Valid credentials return an authenticated session; learners land on Home, employers on the SMME workspace, trainers on their course dashboard, and admins on the admin overview. | Implemented |
 | AUTH-003 | Invalid credentials are rejected. | Invalid login does not create a session and displays a safe error. | Implemented |
 | AUTH-004 | Users can log out. | Logout removes locally stored authentication state and protected API access, then returns users to the landing page. | Implemented |
 | AUTH-005 | Authentication persists across app restarts. | A valid active session restores the correct authenticated state until expiry/logout. | Implemented |
 | AUTH-006 | Users can reset forgotten passwords by email. | Recovery sends a single-use, one-hour reset link without revealing whether an email is registered; the reset form requires matching new passwords, and the new password is accepted at login. | Implemented |
 | AUTH-007 | Backend role authorization is enforced. | An authenticated user cannot call endpoints permitted only to another role. | Verified |
 | AUTH-008 | Protected screens recover cleanly when no valid session exists. | A protected API 401 clears saved session data, redirects to login, and explains that sign-in is required; expired sessions show a distinct message. | Implemented |
+| AUTH-009 | Learners can set a preferred language. | Learner registration offers the supported AgriLearn language choices, saves the selected preference to the account, and lets the user change it from Profile. | Implemented |
 
 ### Learner Experience
 
 | ID | Requirement | Test/Acceptance Criteria | Status |
 |---|---|---|---|
-| LRN-001 | Learner dashboard displays persisted course and progress data. | Dashboard values match backend records for the signed-in learner. | In progress |
-| LRN-002 | Users can browse and search courses/categories. | Explore includes approved courses from the API; search includes course title, category, level, description, and skills; category filters and empty/error/loading states work. | Verified |
+| LRN-001 | Learner dashboard displays persisted course and progress data. | Dashboard and My Learning show only approved courses enrolled in by the signed-in learner, with progress derived from that learner’s saved lesson completions and resume position; a new account with no enrollments shows an honest empty state. | Verified |
+| LRN-002 | Users can browse and search courses/categories. | Explore includes approved courses from the API; search includes course title, category, main content language, level, description, and skills; handbook-aligned category and available-language filters and empty/error/loading states work. | Implemented |
 | LRN-003 | Users can view course details. | API-published course information, skills, lessons, requirements, and metadata match the approved course record. | Verified |
 | LRN-004 | Users can enrol in a course. | An authenticated learner can enrol in an approved course from its details page; the server creates one progress/enrolment record and prevents duplicate enrolment. Draft courses and unauthorized roles are rejected. | Verified |
 | LRN-005 | Learners can complete lessons. | Completing approved lessons records learner-specific progress in order; unavailable/unpublished lessons cannot be marked complete. | Verified |
-| LRN-006 | My Learning shows current and completed courses. | In-progress courses reflect the signed-in learner’s persisted enrolment and lesson progress; the Completed tab uses issued certificates, including course title and earned skills. Certificate loading and error states are explicit. | In progress |
+| LRN-006 | My Learning shows current and completed courses. | Enrolled courses remain In progress until an issued certificate exists, including courses with all lessons complete but assessment pending; the Completed tab uses issued certificates, including course title and earned skills. Progress and certificate loading and error states are explicit. | Verified |
 | LRN-007 | Course progress is calculated server-side or from persisted lesson state. | Lesson completion is persisted per learner/course, and assessment access checks that every lesson is complete. | Verified |
 | LRN-008 | Learners can discover and apply to agricultural opportunities. | The Opportunities screen lists published open roles from the API, supports search and refresh, exposes clear loading/error/empty states, and submits each learner’s application once with visible confirmation. | Verified |
+| LRN-009 | AgriLearn supports the handbook's practical microlearning-to-credential pathway. | Course details show the lesson → assessment → microcredential → Skills Passport pathway; lesson authoring recommends focused lessons of about five minutes, and successful assessment certificates/skills continue to appear in the learner's Passport. | Implemented |
+| LRN-010 | The farmer-facing learning tier supports local-language and low-connectivity access. | Course language is discoverable, approved lesson videos can be saved for offline viewing, and SMS/IVR reinforcement is available through an approved service. Current offline-video support is implemented but still needs native airplane-mode verification; SMS/IVR integration and local-language translations are not implemented. | In progress |
 
 ### Assessments and Credentials
 
@@ -58,7 +64,7 @@ Use this document to validate AgriLearn during development and acceptance testin
 | ASM-001 | Learners can submit assessments. | After completing all published course lessons, learners can retrieve questions without correct answers, submit one choice per question, and see a persisted attempt associated with their account. | Verified |
 | ASM-002 | Assessment results are calculated correctly. | Server scoring matches authored correct choices and passing score; incomplete or out-of-range answers are rejected. | Verified |
 | ASM-003 | Certificate eligibility follows completion rules. | Only learners with every lesson completed can attempt the published course assessment; passing issues one certificate per learner/course, while failing or unpublished-course attempts do not. | Verified |
-| ASM-004 | Certificates contain verifiable learner/course records. | Certificate screen/API returns the correct learner, course, issue date, and unique identifier. | Verified |
+| ASM-004 | Certificates contain verifiable learner/course records. | Certificate screen/API and exported PDF show the correct learner, course, issue date, skills, and unique identifier; AgriLearn credentials do not imply external accreditation. | Implemented |
 | ASM-005 | Skills Passport displays earned credentials and course skills. | Skills from a course appear in the authenticated learner’s Passport only after a passing assessment issues their certificate; incomplete courses award no skills. | Verified |
 
 ### Employer Experience
@@ -66,23 +72,25 @@ Use this document to validate AgriLearn during development and acceptance testin
 | ID | Requirement | Test/Acceptance Criteria | Status |
 |---|---|---|---|
 | EMP-001 | Employers can maintain a business profile. | Profile updates persist and appear only to permitted audiences. | Not started |
-| EMP-002 | Employers can publish opportunities. | Valid jobs/projects and optional required skills are persisted; required skills are shown to applicants before applying; invalid fields are rejected. | In progress |
+| EMP-002 | Employers can publish opportunities. | The authenticated backend supports creating jobs/projects with optional required skills; invalid fields are rejected and skills are shown to applicants. An in-app employer post/manage screen is still required. | In progress |
 | EMP-003 | Applications are processed. | Applications are associated with the correct applicant/opportunity and states update correctly. | In progress |
 | EMP-004 | Invitations can be sent and managed. | Invitations support pending/accepted/declined states and prevent duplicate active invitations. | Not started |
 | EMP-005 | Learner discovery respects privacy controls. | Private learners do not appear in employer discovery or receive unwanted invitations. | Not started |
+| EMP-006 | Agricultural SMMEs can follow the handbook enterprise-development journey. | Employer accounts can save a private business profile, complete and repeat the 11-area diagnostic, review identified gaps and matching published training, track funding-readiness preparation, record a mentor need, prepare market-linkage profile details, and compare assessment history; unavailable mentor-matching, funding-application, and buyer-marketplace services are clearly identified as not connected. | Implemented |
 
 ### Trainer Experience
 
 | ID | Requirement | Test/Acceptance Criteria | Status |
 |---|---|---|---|
-| TRN-001 | Trainers can create and edit courses. | Authorized trainers can manage their own drafts and rejected courses, cannot edit another trainer’s work, and cannot change submitted content while it is under review. | Verified |
+| TRN-001 | Trainers can create and edit courses. | Authorized trainers can manage their own drafts, rejected, and published courses; edits to published courses keep them published, while submitted content remains locked until review and another trainer's work cannot be edited. | Verified |
 | TRN-002 | Trainers can manage lessons and resources. | Lesson/resource changes persist and are included in saved course content and are restored when an editable course is reopened. | Verified |
 | TRN-003 | Trainers can create assessments. | Multiple-choice questions, unique answer choices, correct answers, and passing score are validated and stored separately from public course details. | Verified |
 | TRN-004 | Submitted content follows approval workflow. | Trainers submit complete drafts, submitted content is locked until review, trainers cannot self-approve, and administrators can approve submissions. | Verified |
 | TRN-005 | Trainers create modules through the ZIP four-step flow. | Create opens module details; valid details, optional cover image, lessons/resources, authored assessment questions, draft saving, preview, and submission status are handled in sequence and saved to the API. | Verified |
-| TRN-006 | Trainers can browse their content. | The content tab lists only the signed-in trainer's saved modules; filters include all, drafts, in-review, and published, while returned courses remain accessible in All for editing. | Verified |
-| TRN-007 | Trainers can attach lesson videos and PDF notes. | Video lessons accept MP4, MOV, M4V, or WebM files up to 200 MB; reading lessons accept PDFs up to 25 MB; authorized uploads persist and can be retrieved by the course owner or for approved courses. | Verified |
+| TRN-006 | Trainers can browse and edit their content. | Selecting a module opens its saved details, lessons, assessment summary, status, and reviewer feedback; drafts, rejected modules, and published modules can be edited, published edits remain live, and submitted modules stay locked during review. | Implemented |
+| TRN-007 | Trainers can attach lesson videos and PDF notes. | Video lessons accept MP4, MOV, M4V, or WebM files up to 200 MB; reading lessons accept PDFs up to 25 MB; authorized uploads persist and can be retrieved by the course owner or for approved courses. Video duration is read from the selected video and saved with the lesson/video metadata. | Implemented |
 | TRN-008 | Trainers can specify skills learners gain from a course. | Course authoring lets trainers add and remove up to 12 unique skills; the list persists with drafts and published courses and is awarded to learners only upon passing completion. | Verified |
+| TRN-009 | Trainers can review learner analytics for their courses. | The Reviews page shows aggregate enrolments, active learners, lesson completion, assessment attempts/scores/pass rates, and certificates for the signed-in trainer's approved courses only. Summary cards open per-course metric breakdowns; selecting Active learners fetches the names of recent learners only for that detail view and only for the trainer's approved courses. The aggregate response remains identity-free, and no email, learner ID, or raw assessment answer is exposed. | Verified |
 
 ### Administration
 
@@ -105,7 +113,7 @@ Use this document to validate AgriLearn during development and acceptance testin
 | API-003 | Authentication tokens are validated. | Expired, malformed, revoked, and missing tokens receive appropriate responses. | Implemented |
 | API-004 | Passwords are stored using secure hashing. | Database does not contain plain-text passwords and password verification succeeds. | Implemented |
 | API-005 | Secrets are not committed. | No credentials, private keys, or production database URLs exist in source control. | Implemented |
-| API-006 | Database relationships and migrations preserve integrity. | Prisma schema and migrations describe required relations; constrained operations do not produce orphan records. | Not started |
+| API-006 | Database relationships and migrations preserve integrity. | Prisma schema and initial migration describe required relations; the data import preserves records and constrained operations do not produce orphan records. | In progress |
 | API-007 | File handling validates type and size. | Uploaded files are size/type restricted and stored under controlled paths or object storage. | Verified |
 | QUA-001 | Automated checks pass. | Mobile lint/typecheck and relevant backend tests pass. | Verified |
 | QUA-002 | The app starts without runtime configuration errors. | Expo and backend can start with documented local environment values. | Verified |

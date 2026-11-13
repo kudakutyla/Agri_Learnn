@@ -16,7 +16,7 @@ for (const name of [
   'R2_SECRET_ACCESS_KEY',
   'R2_BUCKET_NAME',
   'R2_ENDPOINT',
-]) delete process.env[name];
+]) process.env[name] = '';
 
 const [{ app }, { store }] = await Promise.all([
   import('../src/index.js'),

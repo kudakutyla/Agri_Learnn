@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { api, ProfileUpdate } from '../services/api';
+import { COURSE_CATEGORY_FILTERS } from '../services/courseCategories';
+import { COURSE_LANGUAGES } from '../services/courseLanguages';
 import { setStorageItem } from '../services/storage';
 
 const provinces = [
@@ -32,9 +34,10 @@ export default function ProfileEditScreen() {
   const [province, setProvince] = useState('');
   const [category, setCategory] = useState('');
   const [primaryInterest, setPrimaryInterest] = useState('');
+  const [language, setLanguage] = useState('English');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [picker, setPicker] = useState<'province' | 'category' | null>(null);
+  const [picker, setPicker] = useState<'province' | 'category' | 'primaryInterest' | 'language' | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -49,6 +52,7 @@ export default function ProfileEditScreen() {
       setProvince(user.province);
       setCategory(user.category);
       setPrimaryInterest(user.primaryInterest);
+      setLanguage(user.language);
     }).catch((error: unknown) => {
       if (active) setErrorMessage(error instanceof Error ? error.message : 'Could not load your profile.');
     }).finally(() => {
@@ -84,6 +88,7 @@ export default function ProfileEditScreen() {
       province,
       category,
       primaryInterest: primaryInterest.trim(),
+      language,
       ...(currentPassword && newPassword ? { currentPassword, newPassword } : {}),
     };
     setSaving(true);
@@ -91,6 +96,7 @@ export default function ProfileEditScreen() {
     try {
       const result = await api.profile.update(profile);
       await setStorageItem('agrilearn_name', result.user.name);
+      await setStorageItem('agrilearn_language', result.user.language);
       if (returnTo === 'admin-settings') router.replace('/admin-settings');
       else router.back();
     } catch (error) {
@@ -100,7 +106,13 @@ export default function ProfileEditScreen() {
     }
   }
 
-  const pickerOptions = picker === 'province' ? provinces : categories;
+  const pickerOptions = picker === 'province'
+    ? provinces
+    : picker === 'category'
+      ? categories
+      : picker === 'primaryInterest'
+        ? COURSE_CATEGORY_FILTERS.map(({ label }) => label)
+        : COURSE_LANGUAGES;
 
   return (
     <View className="flex-1 bg-[#F7F7F2] dark:bg-[#101814]">
@@ -185,15 +197,31 @@ export default function ProfileEditScreen() {
         </View>
         <View className="gap-2">
           <Text className="text-sm font-bold text-[#343D37] dark:text-[#E2EAE3]">Primary interest</Text>
-          <TextInput
-            accessibilityLabel="Primary interest"
-            editable={!loading && !saving}
-            maxLength={120}
-            onChangeText={setPrimaryInterest}
-            placeholder="Primary interest"
-            value={primaryInterest}
-            className="rounded-xl border border-[#DDE4DC] bg-white px-4 py-4 text-base text-[#252B27] dark:border-[#35443A] dark:bg-[#1D2922] dark:text-[#F1F4F1]"
-          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Primary interest: ${primaryInterest || 'not selected'}`}
+            disabled={loading || saving}
+            onPress={() => setPicker('primaryInterest')}
+            className="min-h-14 flex-row items-center justify-between rounded-xl border border-[#DDE4DC] bg-white px-4 dark:border-[#35443A] dark:bg-[#1D2922]"
+          >
+            <Text className={`text-base ${primaryInterest ? 'text-[#252B27] dark:text-[#F1F4F1]' : 'text-[#8A918D]'}`}>
+              {primaryInterest || 'Select primary interest'}
+            </Text>
+            <Text className="text-[#717A74] dark:text-[#AAB6AD]">⌄</Text>
+          </Pressable>
+        </View>
+        <View className="gap-2">
+          <Text className="text-sm font-bold text-[#343D37] dark:text-[#E2EAE3]">Preferred language</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Preferred language: ${language}`}
+            disabled={loading || saving}
+            onPress={() => setPicker('language')}
+            className="min-h-14 flex-row items-center justify-between rounded-xl border border-[#DDE4DC] bg-white px-4 dark:border-[#35443A] dark:bg-[#1D2922]"
+          >
+            <Text className="text-base text-[#252B27] dark:text-[#F1F4F1]">{language}</Text>
+            <Text className="text-[#717A74] dark:text-[#AAB6AD]">⌄</Text>
+          </Pressable>
         </View>
         <View className="mt-2 gap-3 border-t border-[#DDE4DC] pt-4">
           <Text className="text-base font-extrabold text-[#17261E] dark:text-[#F1F4F1]">Change password</Text>
@@ -242,7 +270,11 @@ export default function ProfileEditScreen() {
         >
           <View className="max-h-[80%] w-full rounded-2xl bg-white p-3 dark:bg-[#1D2922]">
             <Text className="px-3 pb-3 pt-2 text-lg font-extrabold text-[#103D2B] dark:text-[#F1F4F1]">
-              {picker === 'province' ? 'Select province' : 'Select category'}
+              {picker === 'province'
+                ? 'Select province'
+                : picker === 'category'
+                  ? 'Select category'
+                  : picker === 'language' ? 'Select preferred language' : 'Select primary interest'}
             </Text>
             <ScrollView>
               {pickerOptions.map((option) => (
@@ -251,11 +283,19 @@ export default function ProfileEditScreen() {
                   accessibilityRole="button"
                   onPress={() => {
                     if (picker === 'province') setProvince(option);
-                    else setCategory(option);
+                    else if (picker === 'category') setCategory(option);
+                    else if (picker === 'language') setLanguage(option);
+                    else setPrimaryInterest(option);
                     setPicker(null);
                   }}
                   className={`rounded-xl px-3 py-3.5 ${
-                    (picker === 'province' ? province : category) === option ? 'bg-[#E8F0E7] dark:bg-[#34483A]' : 'bg-white dark:bg-[#1D2922]'
+                    (picker === 'province'
+                      ? province
+                      : picker === 'category'
+                        ? category
+                        : picker === 'language' ? language : primaryInterest) === option
+                      ? 'bg-[#E8F0E7] dark:bg-[#34483A]'
+                      : 'bg-white dark:bg-[#1D2922]'
                   }`}
                 >
                   <Text className="text-base text-[#252B27] dark:text-[#F1F4F1]">{option}</Text>

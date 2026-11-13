@@ -1,14 +1,97 @@
 import { useEffect, useState } from 'react';
-import { Image, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import { createVideoPlayer } from 'expo-video';
 import { api, CourseAssessmentQuestion, CourseLesson, LocalUploadFile } from '../services/api';
+import { COURSE_CATEGORY_FILTERS } from '../services/courseCategories';
+import { COURSE_LANGUAGES } from '../services/courseLanguages';
 import { getStorageItem } from '../services/storage';
 import { uploadVideo } from '../services/videoStorage';
 
-const categories = ['Crop Production', 'Soil Management', 'Climate-Smart Agriculture'];
+const categories = COURSE_CATEGORY_FILTERS.map(({ label, value }) => ({ label, value }));
 const maxPdfBytes = 25 * 1024 * 1024;
+const maxVideoDurationSeconds = 24 * 60 * 60;
+const videoMetadataTimeoutMs = 15_000;
+
+function readVideoDuration(uri: string): Promise<number> {
+  if (Platform.OS === 'web') {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      let timeout: ReturnType<typeof setTimeout>;
+
+      const finish = (error?: Error, duration?: number) => {
+        clearTimeout(timeout);
+        video.removeEventListener('loadedmetadata', handleMetadata);
+        video.removeEventListener('error', handleError);
+        video.removeAttribute('src');
+        video.load();
+        if (error) reject(error);
+        else if (!duration || !Number.isFinite(duration) || duration <= 0) {
+          reject(new Error('Could not read the selected video duration.'));
+        } else if (duration > maxVideoDurationSeconds) {
+          reject(new Error('Videos must be 24 hours or shorter.'));
+        } else {
+          resolve(duration);
+        }
+      };
+      const handleMetadata = () => finish(undefined, video.duration);
+      const handleError = () => finish(new Error('Could not read the selected video duration.'));
+
+      timeout = setTimeout(
+        () => finish(new Error('Reading the video duration timed out. Choose the video again and retry.')),
+        videoMetadataTimeoutMs,
+      );
+      video.addEventListener('loadedmetadata', handleMetadata);
+      video.addEventListener('error', handleError);
+      video.src = uri;
+      video.load();
+    });
+  }
+
+  const player = createVideoPlayer({ uri });
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout>;
+    let sourceLoadSubscription: { remove: () => void } | undefined;
+    let statusChangeSubscription: { remove: () => void } | undefined;
+
+    const finish = (error?: Error, duration?: number) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      sourceLoadSubscription?.remove();
+      statusChangeSubscription?.remove();
+      player.release();
+      if (error) reject(error);
+      else if (duration && Number.isFinite(duration) && duration > 0 && duration <= maxVideoDurationSeconds) resolve(duration);
+      else if (duration && duration > maxVideoDurationSeconds) reject(new Error('Videos must be 24 hours or shorter.'));
+      else reject(new Error('Could not read the selected video duration.'));
+    };
+
+    timeout = setTimeout(
+      () => finish(new Error('Reading the video duration timed out. Choose the video again and retry.')),
+      videoMetadataTimeoutMs,
+    );
+    sourceLoadSubscription = player.addListener('sourceLoad', ({ duration }) => {
+      finish(undefined, duration);
+    });
+    statusChangeSubscription = player.addListener('statusChange', ({ status, error }) => {
+      if (status === 'error') finish(new Error(error?.message ?? 'Could not read the selected video duration.'));
+    });
+
+    if (player.status === 'readyToPlay') finish(undefined, player.duration);
+    else if (player.status === 'error') finish(new Error('Could not read the selected video duration.'));
+  });
+}
+
+function formatLessonDuration(seconds: number) {
+  const roundedSeconds = Math.round(seconds);
+  if (roundedSeconds < 60) return `${roundedSeconds} sec`;
+  return `${Math.ceil(roundedSeconds / 60)} min`;
+}
 
 function durationInSeconds(value: string) {
   const clock = value.trim().match(/^(?:(\d{1,2}):)?(\d{1,2}):([0-5]\d)$/);
@@ -43,7 +126,9 @@ export default function CreateModuleScreen() {
   const [saveMessage, setSaveMessage] = useState('');
   const [courseStatus, setCourseStatus] = useState<'draft' | 'submitted' | 'approved' | 'rejected'>('draft');
   const [title, setTitle] = useState('');
-  const [category, setCategory] = useState(categories[0]);
+  const [category, setCategory] = useState<string>(categories[0].value);
+  const [language, setLanguage] = useState('English');
+  const [customLanguage, setCustomLanguage] = useState('');
   const [description, setDescription] = useState(
     'Learn practical, low-impact ways to identify, prevent and manage common crop pests.',
   );
@@ -55,6 +140,7 @@ export default function CreateModuleScreen() {
   const [coverUri, setCoverUri] = useState('');
   const [coverImage, setCoverImage] = useState('');
   const [categoryPickerVisible, setCategoryPickerVisible] = useState(false);
+  const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   const [lessons, setLessons] = useState<CourseLesson[]>([]);
   const [questions, setQuestions] = useState<CourseAssessmentQuestion[]>([
     { prompt: '', options: ['', '', '', ''], correctOption: 0 },
@@ -63,9 +149,11 @@ export default function CreateModuleScreen() {
   const [lessonTitle, setLessonTitle] = useState('');
   const [lessonType, setLessonType] = useState<CourseLesson['type']>('Video');
   const [lessonDuration, setLessonDuration] = useState('');
+  const [lessonDurationSeconds, setLessonDurationSeconds] = useState<number>();
   const [lessonFile, setLessonFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [addingLesson, setAddingLesson] = useState(false);
   const [uploadingLesson, setUploadingLesson] = useState(false);
+  const [readingVideoMetadata, setReadingVideoMetadata] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [busy, setBusy] = useState(false);
 
@@ -80,9 +168,9 @@ export default function CreateModuleScreen() {
           getStorageItem('agrilearn_user_id'),
         ]);
         const course = courses.courses.find((item) => item.id === requestedCourseId && item.ownerId === userId);
-        if (!course) throw new Error('This course could not be found in your trainer account.');
-        if (course.status === 'submitted' || course.status === 'approved') {
-          throw new Error('This course cannot be edited while it is under review or published.');
+        if (!course) throw new Error('This course could not be found in your content creator account.');
+        if (course.status === 'submitted') {
+          throw new Error('This course cannot be edited while it is under review.');
         }
         const { assessment } = await api.courses.assessment.get(requestedCourseId);
         if (!active) return;
@@ -90,6 +178,14 @@ export default function CreateModuleScreen() {
         setCourseStatus(course.status);
         setTitle(course.title);
         setCategory(course.category);
+        const savedLanguage = course.language ?? 'English';
+        if (COURSE_LANGUAGES.some((option) => option === savedLanguage)) {
+          setLanguage(savedLanguage);
+          setCustomLanguage('');
+        } else {
+          setLanguage('Other');
+          setCustomLanguage(savedLanguage);
+        }
         setDescription(course.description);
         setObjectives(course.objectives ?? '');
         setSkills(course.skills ?? []);
@@ -143,6 +239,11 @@ export default function CreateModuleScreen() {
       setErrorMessage('Enter a title with at least 3 characters.');
       return;
     }
+    const courseLanguage = language === 'Other' ? customLanguage.trim() : language;
+    if (courseLanguage.length < 2 || courseLanguage.length > 60) {
+      setErrorMessage('Choose a course language or enter a language name between 2 and 60 characters.');
+      return;
+    }
     setErrorMessage('');
     setSaveMessage('');
     setBusy(true);
@@ -150,23 +251,22 @@ export default function CreateModuleScreen() {
       const details = {
         title: title.trim(),
         category,
+        language: courseLanguage,
         description: description.trim(),
         objectives: objectives.trim(),
         skills,
         coverImage: coverImage || undefined,
-        lessons: [],
         level: 'Beginner' as const,
-        status: 'draft' as const,
       };
       const { course } = moduleId
         ? await api.courses.update(moduleId, {
           ...details,
           lessons,
-          status: 'draft',
+          ...(courseStatus === 'approved' ? {} : { status: 'draft' as const }),
         })
-        : await api.courses.create(details);
+        : await api.courses.create({ ...details, lessons: [], status: 'draft' });
       setModuleId(course.id);
-      setCourseStatus('draft');
+      setCourseStatus(course.status);
       setStep(2);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not save module.');
@@ -210,14 +310,24 @@ export default function CreateModuleScreen() {
         setErrorMessage('Choose PDF notes that are 25 MB or smaller.');
         return;
       }
+      if (lessonType === 'Video') {
+        setReadingVideoMetadata(true);
+        const durationSeconds = await readVideoDuration(file.uri);
+        setLessonDurationSeconds(durationSeconds);
+        setLessonDuration(formatLessonDuration(durationSeconds));
+      } else {
+        setLessonDurationSeconds(undefined);
+      }
       setLessonFile(file);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not select file.');
+    } finally {
+      setReadingVideoMetadata(false);
     }
   }
 
   async function addLesson() {
-    if (lessonTitle.trim().length < 3 || !lessonDuration.trim()) {
+    if (readingVideoMetadata || lessonTitle.trim().length < 3 || !lessonDuration.trim()) {
       setErrorMessage('Add a lesson title with at least 3 characters and a duration.');
       return;
     }
@@ -233,7 +343,9 @@ export default function CreateModuleScreen() {
           name: lessonFile.name,
           mimeType: lessonFile.mimeType,
           size: lessonFile.size,
-          durationSeconds: durationInSeconds(lessonDuration),
+          durationSeconds: lessonType === 'Video'
+            ? lessonDurationSeconds ?? durationInSeconds(lessonDuration)
+            : durationInSeconds(lessonDuration),
           file: lessonFile.file,
         } satisfies LocalUploadFile;
         if (lessonType === 'Video') {
@@ -250,6 +362,7 @@ export default function CreateModuleScreen() {
       }]);
       setLessonTitle('');
       setLessonDuration('');
+      setLessonDurationSeconds(undefined);
       setLessonFile(null);
       setAddingLesson(false);
     } catch (error) {
@@ -313,8 +426,10 @@ export default function CreateModuleScreen() {
           passMark: parsedPassMark,
         },
       });
-      setCourseStatus('draft');
-      setSaveMessage('Draft saved. Your lessons and assessment are ready to continue editing.');
+      setCourseStatus((current) => current === 'approved' ? current : 'draft');
+      setSaveMessage(courseStatus === 'approved'
+        ? 'Changes saved. This published module remains available to learners.'
+        : 'Draft saved. Your lessons and assessment are ready to continue editing.');
       return true;
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not save module content.');
@@ -342,6 +457,11 @@ export default function CreateModuleScreen() {
     }
   }
 
+  function finishEditing() {
+    if (!moduleId) return;
+    router.replace({ pathname: '/module-details', params: { courseId: moduleId } });
+  }
+
   function goBack() {
     if (step === 1) {
       router.back();
@@ -362,7 +482,7 @@ export default function CreateModuleScreen() {
   if (loadingCourse) {
     return (
       <View className="flex-1 items-center justify-center bg-[#F7F7F2] px-6">
-        <Text className="text-sm font-bold text-[#14543E]">Loading your draft…</Text>
+        <Text className="text-sm font-bold text-[#14543E]">Loading your module…</Text>
       </View>
     );
   }
@@ -416,11 +536,16 @@ export default function CreateModuleScreen() {
       {step === 1 && (
         <ScrollView className="flex-1" contentContainerClassName="gap-4 px-5 pb-8 pt-5">
           <View className="flex-row items-center justify-between">
-            <Text className="rounded-full bg-[#E9ECE7] px-2.5 py-1 text-[8px] font-extrabold text-[#69736C]">
-              {moduleId ? 'DRAFT SAVED' : 'NEW DRAFT'}
+            <Text className={`rounded-full px-2.5 py-1 text-[8px] font-extrabold ${courseStatus === 'approved' ? 'bg-[#EAF1E8] text-[#477E56]' : 'bg-[#E9ECE7] text-[#69736C]'}`}>
+              {courseStatus === 'approved' ? 'PUBLISHED' : moduleId ? 'DRAFT SAVED' : 'NEW DRAFT'}
             </Text>
             {courseStatus === 'rejected' && <Text className="text-[9px] font-bold text-[#9A5147]">Changes requested</Text>}
           </View>
+          {courseStatus === 'approved' ? (
+            <Text className="text-[9px] leading-4 text-[#477E56]">
+              This module stays published while your saved changes are applied.
+            </Text>
+          ) : null}
           <Pressable onPress={pickCoverImage} className="h-[84px] items-center justify-center overflow-hidden rounded-xl border border-dashed border-[#A9C6AE] bg-[#EAF1E8]">
             {coverUri ? (
               <>
@@ -443,9 +568,27 @@ export default function CreateModuleScreen() {
           <View>
             <FieldLabel>Agricultural category</FieldLabel>
             <Pressable onPress={() => setCategoryPickerVisible(true)} className="h-[46px] flex-row items-center justify-between rounded-xl border border-[#E1E5DF] bg-white px-3">
-              <Text className="text-[12px] text-[#252B27]">{category}</Text>
+              <Text className="text-[12px] text-[#252B27]">{categories.find((option) => option.value === category)?.label ?? category}</Text>
               <Text className="text-[#555E58]">⌄</Text>
             </Pressable>
+          </View>
+          <View>
+            <FieldLabel>Main content language</FieldLabel>
+            <Pressable onPress={() => setLanguagePickerVisible(true)} className="h-[46px] flex-row items-center justify-between rounded-xl border border-[#E1E5DF] bg-white px-3">
+              <Text className="text-[12px] text-[#252B27]">{language === 'Other' ? customLanguage || 'Other' : language}</Text>
+              <Text className="text-[#555E58]">⌄</Text>
+            </Pressable>
+            <Text className="mt-1 text-[9px] leading-4 text-[#717A74]">Choose the main language used in the lessons and assessment.</Text>
+            {language === 'Other' ? (
+              <TextInput
+                accessibilityLabel="Other course language"
+                value={customLanguage}
+                onChangeText={setCustomLanguage}
+                maxLength={60}
+                placeholder="Enter the language"
+                className="mt-2 h-11 rounded-xl border border-[#E1E5DF] bg-white px-3 text-[11px]"
+              />
+            ) : null}
           </View>
           <View>
             <FieldLabel>Short description</FieldLabel>
@@ -507,6 +650,7 @@ export default function CreateModuleScreen() {
             ))}
           </View>
           <Text className="text-base font-extrabold text-[#252B27]">Lessons</Text>
+          <Text className="text-[10px] leading-4 text-[#717A74]">Keep lessons practical and focused; aim for about five minutes where possible.</Text>
           {lessons.map((lesson, index) => (
             <View key={`${lesson.title}-${index}`} className="flex-row items-center gap-3 rounded-xl border border-[#E1E5DF] bg-white p-3">
               <Text className="h-7 w-7 rounded-full bg-[#EAF1E8] text-center text-xs font-bold leading-7 text-[#14543E]">{index + 1}</Text>
@@ -523,22 +667,35 @@ export default function CreateModuleScreen() {
               <TextInput value={lessonTitle} onChangeText={setLessonTitle} placeholder="Lesson title" className="rounded-lg border border-[#DDE4DC] px-3 py-3 text-xs" />
               <View className="flex-row gap-2">
                 {(['Video', 'Reading'] as const).map((type) => (
-                  <Pressable key={type} onPress={() => { setLessonType(type); setLessonFile(null); }} className={`flex-1 items-center rounded-lg border py-2 ${lessonType === type ? 'border-[#14543E] bg-[#EAF1E8]' : 'border-[#DDE4DC]'}`}>
+                  <Pressable key={type} onPress={() => { setLessonType(type); setLessonFile(null); setLessonDuration(''); setLessonDurationSeconds(undefined); }} className={`flex-1 items-center rounded-lg border py-2 ${lessonType === type ? 'border-[#14543E] bg-[#EAF1E8]' : 'border-[#DDE4DC]'}`}>
                     <Text className="text-xs text-[#14543E]">{type}</Text>
                   </Pressable>
                 ))}
-                <TextInput value={lessonDuration} onChangeText={setLessonDuration} placeholder="e.g. 8 min" className="flex-1 rounded-lg border border-[#DDE4DC] px-2 text-xs" />
+                <TextInput
+                  accessibilityLabel="Lesson duration"
+                  value={lessonDuration}
+                  onChangeText={setLessonDuration}
+                  editable={lessonType !== 'Video' || !lessonFile}
+                  placeholder={lessonType === 'Video' ? 'Set from video' : 'e.g. 8 min'}
+                  className="flex-1 rounded-lg border border-[#DDE4DC] px-2 text-xs"
+                />
               </View>
-              <Pressable disabled={uploadingLesson} onPress={pickLessonFile} className="items-center rounded-lg border border-dashed border-[#A9C6AE] bg-[#F7FAF6] px-3 py-3">
+              <Pressable disabled={uploadingLesson || readingVideoMetadata} onPress={pickLessonFile} className="items-center rounded-lg border border-dashed border-[#A9C6AE] bg-[#F7FAF6] px-3 py-3">
                 <Text numberOfLines={1} className="text-xs font-bold text-[#14543E]">
                   {lessonFile?.name ?? (lessonType === 'Video' ? 'Attach video (MP4 or MOV)' : 'Attach PDF notes')}
                 </Text>
                 <Text className="mt-1 text-[9px] text-[#717A74]">
-                  {lessonFile ? 'Tap to choose a different file' : lessonType === 'Video' ? 'Uploads directly to secure cloud storage' : 'PDF · Up to 25 MB'}
+                  {readingVideoMetadata
+                    ? 'Reading video duration…'
+                    : lessonFile
+                      ? lessonType === 'Video' ? 'Duration set automatically · Tap to choose another video' : 'Tap to choose a different file'
+                      : lessonType === 'Video' ? 'Uploads directly to secure cloud storage' : 'PDF · Up to 25 MB'}
                 </Text>
               </Pressable>
-              <Pressable disabled={uploadingLesson} onPress={addLesson} className={`items-center rounded-lg bg-[#14543E] py-3 ${uploadingLesson ? 'opacity-60' : ''}`}>
-                <Text className="font-bold text-white">{uploadingLesson ? `Uploading… ${uploadProgress}%` : 'Save lesson'}</Text>
+              <Pressable disabled={uploadingLesson || readingVideoMetadata} onPress={addLesson} className={`items-center rounded-lg bg-[#14543E] py-3 ${uploadingLesson || readingVideoMetadata ? 'opacity-60' : ''}`}>
+                <Text className="font-bold text-white">
+                  {uploadingLesson ? `Uploading… ${uploadProgress}%` : readingVideoMetadata ? 'Reading video…' : 'Save lesson'}
+                </Text>
               </Pressable>
             </View>
           ) : (
@@ -619,7 +776,7 @@ export default function CreateModuleScreen() {
             <Text className="text-xs font-bold text-[#14543E]">＋ Add assessment question</Text>
           </Pressable>
           <Pressable disabled={busy} onPress={() => { void saveDraftContent(); }} className="min-h-11 items-center justify-center rounded-xl border border-[#14543E] bg-white">
-            <Text className="font-bold text-[#14543E]">{busy ? 'Saving…' : 'Save draft'}</Text>
+            <Text className="font-bold text-[#14543E]">{busy ? 'Saving…' : courseStatus === 'approved' ? 'Save changes' : 'Save draft'}</Text>
           </Pressable>
           <Pressable disabled={busy} onPress={saveLessonsAndContinue} className="mt-1 min-h-12 flex-row items-center justify-center rounded-xl bg-[#14543E]">
             <Text className="font-bold text-white">{busy ? 'Saving…' : 'Save & preview module  →'}</Text>
@@ -656,26 +813,56 @@ export default function CreateModuleScreen() {
                 </View>
               </View>
             ) : null}
-            <View className="rounded-xl bg-[#EAF1E8] p-4">
-              <Text className="text-xs font-extrabold text-[#14543E]">Ready for review?</Text>
-              <Text className="mt-1 text-[10px] leading-4 text-[#59635C]">An administrator will review your lessons and assessment before learners can access this module.</Text>
-            </View>
-            <Pressable disabled={busy} onPress={submitForApproval} className="min-h-12 flex-row items-center justify-center rounded-xl bg-[#14543E]">
-              <Text className="font-bold text-white">{busy ? 'Submitting…' : 'Submit for approval  ↑'}</Text>
-            </Pressable>
+            {courseStatus === 'approved' ? (
+              <>
+                <View className="rounded-xl bg-[#EAF1E8] p-4">
+                  <Text className="text-xs font-extrabold text-[#14543E]">Module remains published</Text>
+                  <Text className="mt-1 text-[10px] leading-4 text-[#59635C]">Your saved changes are live for learners. You do not need to submit this module for review again.</Text>
+                </View>
+                <Pressable onPress={finishEditing} className="min-h-12 flex-row items-center justify-center rounded-xl bg-[#14543E]">
+                  <Text className="font-bold text-white">Finish editing</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <View className="rounded-xl bg-[#EAF1E8] p-4">
+                  <Text className="text-xs font-extrabold text-[#14543E]">Ready for review?</Text>
+                  <Text className="mt-1 text-[10px] leading-4 text-[#59635C]">An administrator will review your lessons and assessment before learners can access this module.</Text>
+                </View>
+                <Pressable disabled={busy} onPress={submitForApproval} className="min-h-12 flex-row items-center justify-center rounded-xl bg-[#14543E]">
+                  <Text className="font-bold text-white">{busy ? 'Submitting…' : 'Submit for approval  ↑'}</Text>
+                </Pressable>
+              </>
+            )}
           </View>
         </ScrollView>
       )}
 
       <Modal visible={categoryPickerVisible} transparent animationType="fade" onRequestClose={() => setCategoryPickerVisible(false)}>
         <Pressable onPress={() => setCategoryPickerVisible(false)} className="flex-1 justify-center bg-black/40 px-5">
-          <Pressable className="rounded-2xl bg-white p-4">
+          <Pressable className="max-h-[80%] rounded-2xl bg-white p-4">
             <Text className="mb-3 text-base font-extrabold text-[#103D2B]">Agricultural category</Text>
-            {categories.map((option) => (
-              <Pressable key={option} onPress={() => { setCategory(option); setCategoryPickerVisible(false); }} className="rounded-lg px-3 py-3">
-                <Text className={`text-sm ${category === option ? 'font-bold text-[#14543E]' : 'text-[#252B27]'}`}>{option}</Text>
-              </Pressable>
-            ))}
+            <ScrollView>
+              {categories.map((option) => (
+                <Pressable key={option.value} onPress={() => { setCategory(option.value); setCategoryPickerVisible(false); }} className="rounded-lg px-3 py-3">
+                  <Text className={`text-sm ${category === option.value ? 'font-bold text-[#14543E]' : 'text-[#252B27]'}`}>{option.label}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+      <Modal visible={languagePickerVisible} transparent animationType="fade" onRequestClose={() => setLanguagePickerVisible(false)}>
+        <Pressable onPress={() => setLanguagePickerVisible(false)} className="flex-1 justify-center bg-black/40 px-5">
+          <Pressable className="max-h-[80%] rounded-2xl bg-white p-4">
+            <Text className="mb-3 text-base font-extrabold text-[#103D2B]">Main content language</Text>
+            <ScrollView>
+              {COURSE_LANGUAGES.map((option) => (
+                <Pressable key={option} onPress={() => { setLanguage(option); setLanguagePickerVisible(false); }} className="rounded-lg px-3 py-3">
+                  <Text className={`text-sm ${language === option ? 'font-bold text-[#14543E]' : 'text-[#252B27]'}`}>{option}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>

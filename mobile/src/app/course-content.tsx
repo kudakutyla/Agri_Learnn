@@ -3,9 +3,9 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ImageBackground, Linking, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useEvent } from 'expo';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { courses as sampleCourses } from '../data';
 import { API_URL, api, Course } from '../services/api';
 import { downloadOfflineVideo, getOfflineCourse, getOfflineVideoFile, saveCourseForOffline } from '../services/offlineVideos';
+import { useUiText } from '../services/useUiText';
 
 const courseImages = [
   'https://images.unsplash.com/photo-1492496913980-501348b61469?auto=format&fit=crop&w=900&q=85',
@@ -19,30 +19,8 @@ function formatDuration(seconds: number) {
   return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 }
 
-function sampleCourseById(id: string): Course | undefined {
-  const sample = sampleCourses.find((item) => item.id === id);
-  if (
-    !sample
-    || (sample.level !== 'Beginner' && sample.level !== 'Intermediate' && sample.level !== 'Advanced')
-  ) return undefined;
-  return {
-    id: sample.id,
-    ownerId: '',
-    title: sample.title,
-    category: sample.category,
-    description: sample.description,
-    objectives: sample.objectives.join('\n'),
-    level: sample.level,
-    status: 'approved',
-    lessons: sample.lessonTitles.map((title, index) => ({
-      title,
-      type: index === 0 ? 'Video' : 'Reading',
-      duration: index === 0 ? '12 min' : '10 min',
-    })),
-  };
-}
-
 function LessonVideo({ uri, title }: { uri: string; title: string }) {
+  const { t } = useUiText();
   const player = useVideoPlayer({ uri }, (videoPlayer) => {
     videoPlayer.loop = false;
   });
@@ -60,14 +38,14 @@ function LessonVideo({ uri, title }: { uri: string; title: string }) {
       {playback.status === 'loading' ? (
         <View className="absolute inset-0 items-center justify-center bg-[#17261E]/80">
           <ActivityIndicator color="white" />
-          <Text className="mt-2 text-[9px] font-semibold text-white">Loading video…</Text>
+          <Text className="mt-2 text-[9px] font-semibold text-white">{t('Loading video…')}</Text>
         </View>
       ) : null}
       {playback.status === 'error' ? (
         <View className="absolute inset-0 items-center justify-center bg-[#17261E]/90 px-5">
-          <Text className="text-center text-[10px] font-bold text-white">Video playback failed</Text>
+          <Text className="text-center text-[10px] font-bold text-white">{t('Video playback failed')}</Text>
           <Text numberOfLines={2} className="mt-1 text-center text-[8px] text-white/75">
-            {playback.error?.message ?? 'Check your connection and try again.'}
+            {playback.error?.message ?? t('Check your connection and try again.')}
           </Text>
         </View>
       ) : null}
@@ -76,6 +54,7 @@ function LessonVideo({ uri, title }: { uri: string; title: string }) {
 }
 
 export default function CourseContentScreen() {
+  const { t } = useUiText();
   const { courseId } = useLocalSearchParams<{ courseId: string }>();
   const [course, setCourse] = useState<Course | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,6 +65,7 @@ export default function CourseContentScreen() {
   const [isVideoDownloaded, setIsVideoDownloaded] = useState(false);
   const [downloadingVideo, setDownloadingVideo] = useState(false);
   const [completingLesson, setCompletingLesson] = useState(false);
+  const [savingAndExiting, setSavingAndExiting] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
 
   useEffect(() => {
@@ -98,39 +78,36 @@ export default function CourseContentScreen() {
           setCourse(match);
           try {
             const progress = await api.courses.lessons.progress(match.id);
-            if (active) setSelectedLesson(progress.nextLessonIndex);
+            if (active) setSelectedLesson(progress.resumeLessonIndex);
           } catch (progressError) {
-            if (active) setError(progressError instanceof Error ? progressError.message : 'Could not load saved learning progress.');
+            if (active) setError(progressError instanceof Error ? progressError.message : t('Could not load saved learning progress.'));
           }
           try {
             await saveCourseForOffline(match);
           } catch (cacheError) {
             if (active) {
-              setError(`Course is available, but could not be saved for offline use: ${cacheError instanceof Error ? cacheError.message : 'Please try again.'}`);
+              setError(`${t('Course is available, but could not be saved for offline use')}: ${cacheError instanceof Error ? cacheError.message : t('Please try again.')}`);
             }
           }
           return;
         }
 
         if (active) {
-          const sample = sampleCourseById(courseId);
-          setCourse(sample ?? await getOfflineCourse(courseId));
+          const offlineCourse = await getOfflineCourse(courseId);
+          if (offlineCourse) setCourse(offlineCourse);
+          else setError('This course is not published or is no longer available.');
         }
       } catch (loadError) {
         if (active) {
           try {
             const savedCourse = await getOfflineCourse(courseId);
-            const sample = sampleCourseById(courseId);
             if (savedCourse) {
               setCourse(savedCourse);
-            } else if (sample) {
-              setCourse(sample);
-              setError(`Could not load uploaded lesson files: ${loadError instanceof Error ? loadError.message : 'Please try again.'}`);
             } else {
-              setError(loadError instanceof Error ? loadError.message : 'Please try again.');
+              setError(loadError instanceof Error ? loadError.message : t('Please try again.'));
             }
           } catch (offlineError) {
-            setError(offlineError instanceof Error ? offlineError.message : 'Could not load saved course data.');
+            setError(offlineError instanceof Error ? offlineError.message : t('Could not load saved course data.'));
           }
         }
       } finally {
@@ -140,7 +117,7 @@ export default function CourseContentScreen() {
 
     void loadCourse();
     return () => { active = false; };
-  }, [courseId]);
+  }, [courseId, t]);
 
   const lessons = course?.lessons ?? [];
   const lesson = lessons[selectedLesson];
@@ -156,9 +133,8 @@ export default function CourseContentScreen() {
   const pdfUri = pdfFile
     ? `${API_URL}/api/courses/${encodeURIComponent(course?.id ?? '')}/files/${encodeURIComponent(pdfFile.id)}`
     : undefined;
-  const imageIndex = sampleCourses.findIndex((item) => item.id === courseId);
   const mediaImage = course?.coverImage
-    ?? courseImages[imageIndex >= 0 ? imageIndex : 0];
+    ?? courseImages[0];
   const objective = course?.objectives?.split(/\n|(?<=[.!?])\s+/).find(Boolean);
   const isFirstLesson = selectedLesson === 0;
   const isLastLesson = selectedLesson >= lessons.length - 1;
@@ -174,11 +150,11 @@ export default function CourseContentScreen() {
       .catch((playbackLoadError: unknown) => {
         if (active) setVideoPlayback({
           videoId: videoFileId,
-          error: playbackLoadError instanceof Error ? playbackLoadError.message : 'Could not load the secure video stream.',
+          error: playbackLoadError instanceof Error ? playbackLoadError.message : t('Could not load the secure video stream.'),
         });
       });
     return () => { active = false; };
-  }, [videoFileId]);
+  }, [videoFileId, t]);
 
   useEffect(() => {
     let active = true;
@@ -198,18 +174,26 @@ export default function CourseContentScreen() {
     return () => { active = false; };
   }, [course, videoFile]);
 
-  function exitLesson() {
-    if (router.canGoBack()) {
-      router.back();
-    } else if (courseId) {
-      router.replace({ pathname: '/course', params: { id: courseId } });
-    } else {
+  async function exitLesson() {
+    if (savingAndExiting) return;
+    if (!course) {
       router.replace('/learning');
+      return;
+    }
+    setError('');
+    setSavingAndExiting(true);
+    try {
+      await api.courses.lessons.savePosition(course.id, selectedLesson);
+      router.replace('/learning');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : t('Could not save your course position.'));
+    } finally {
+      setSavingAndExiting(false);
     }
   }
 
   function showUnavailableVideo() {
-    Alert.alert('Video not available', 'The instructor has not attached a video to this lesson yet.');
+    Alert.alert(t('Video not available'), t('The instructor has not attached a video to this lesson yet.'));
   }
 
   async function openLessonPdf() {
@@ -218,8 +202,8 @@ export default function CourseContentScreen() {
       await Linking.openURL(pdfUri);
     } catch (openError) {
       Alert.alert(
-        'Could not open PDF notes',
-        openError instanceof Error ? openError.message : 'Please try again.',
+        t('Could not open PDF notes'),
+        openError instanceof Error ? openError.message : t('Please try again.'),
       );
     }
   }
@@ -244,7 +228,7 @@ export default function CourseContentScreen() {
         setSelectedLesson((current) => Math.min(lessons.length - 1, current + 1));
       }
     } catch (completionError) {
-      setError(completionError instanceof Error ? completionError.message : 'Could not save lesson progress.');
+      setError(completionError instanceof Error ? completionError.message : t('Could not save lesson progress.'));
     } finally {
       setCompletingLesson(false);
     }
@@ -252,26 +236,59 @@ export default function CourseContentScreen() {
 
   async function downloadVideoForOffline() {
     if (!course || !videoFile || downloadingVideo) return;
-    if (Platform.OS === 'web') {
-      try {
-        const { url } = await api.videos.playbackUrl(videoFile.id, true);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = videoFile.name;
-        link.rel = 'noopener';
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      } catch (downloadError) {
-        setError(downloadError instanceof Error ? downloadError.message : 'Could not download the video.');
-      }
-      return;
-    }
 
     setDownloadingVideo(true);
     setDownloadProgress(0);
     try {
       const { url } = await api.videos.playbackUrl(videoFile.id, true);
+
+      if (Platform.OS === 'web') {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Download failed (${response.status}).`);
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('Your browser could not stream the video download.');
+
+        const contentLengthHeader = response.headers.get('content-length');
+        const totalBytes = contentLengthHeader ? Number.parseInt(contentLengthHeader, 10) : NaN;
+        const chunks: Uint8Array[] = [];
+        let receivedBytes = 0;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            receivedBytes += value.byteLength;
+            if (Number.isFinite(totalBytes) && totalBytes > 0) {
+              const nextProgress = Math.min(100, Math.round((receivedBytes / totalBytes) * 100));
+              setDownloadProgress(nextProgress);
+            }
+          }
+        }
+
+        const allBytes = new Uint8Array(receivedBytes);
+        let offset = 0;
+        for (const chunk of chunks) {
+          allBytes.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+
+        const blob = new Blob([allBytes], { type: videoFile.mimeType || 'video/mp4' });
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = videoFile.name;
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+        setDownloadProgress(100);
+        setIsVideoDownloaded(true);
+        return;
+      }
+
       const downloadedFile = await downloadOfflineVideo(
         course,
         videoFile.id,
@@ -283,8 +300,8 @@ export default function CourseContentScreen() {
       setIsVideoDownloaded(true);
     } catch (downloadError) {
       Alert.alert(
-        'Could not download video',
-        downloadError instanceof Error ? downloadError.message : 'Please check your connection and try again.',
+        t('Could not download video'),
+        downloadError instanceof Error ? downloadError.message : t('Please check your connection and try again.'),
       );
     } finally {
       setDownloadingVideo(false);
@@ -292,20 +309,26 @@ export default function CourseContentScreen() {
   }
 
   return (
-    <View className="flex-1 bg-[#FBFAF5]">
+    <View className="flex-1 bg-[#FBFAF5] dark:bg-[#101814]">
       <View className="h-[3px] bg-[#E4E8E1]">
         <View className="h-full bg-[#D9AE3F]" style={{ width: `${progress}%` }} />
       </View>
 
-      <View className="h-[62px] flex-row items-center justify-between border-b border-[#E5E8E2] bg-white px-4">
+      <View className="h-[62px] flex-row items-center justify-between border-b border-[#E5E8E2] bg-white px-4 dark:border-[#35443A] dark:bg-[#1D2922]">
         <View className="flex-row items-center">
           <View className="h-8 w-8 items-center justify-center rounded-xl bg-[#14543E]">
             <Text className="text-sm text-white">♧</Text>
           </View>
           <Text className="ml-2 text-[14px] font-extrabold text-[#14543E]">AgriLearn</Text>
         </View>
-        <Pressable accessibilityRole="button" onPress={exitLesson} className="px-1 py-2">
-          <Text className="text-[10px] font-bold text-[#14543E]">Save &amp; exit</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: savingAndExiting }}
+          disabled={savingAndExiting}
+          onPress={() => { void exitLesson(); }}
+          className="px-1 py-2"
+        >
+          <Text className="text-[10px] font-bold text-[#14543E]">{savingAndExiting ? t('Saving…') : t('Save & exit')}</Text>
         </Pressable>
       </View>
 
@@ -313,44 +336,44 @@ export default function CourseContentScreen() {
         {loading ? (
           <View className="items-center py-16">
             <ActivityIndicator color="#14543E" />
-            <Text className="mt-3 text-xs text-[#717A74]">Loading lesson…</Text>
+            <Text className="mt-3 text-xs text-[#717A74] dark:text-[#AAB6AD]">{t('Loading lesson…')}</Text>
           </View>
         ) : !course ? (
-          <View className="items-center rounded-2xl bg-white px-5 py-8">
-            <Text className="text-base font-extrabold text-[#252B27]">Could not load course content</Text>
-            <Text className="mt-2 text-center text-xs leading-5 text-[#717A74]">
-              {error || 'This course may no longer be available.'}
+          <View className="items-center rounded-2xl bg-white px-5 py-8 dark:bg-[#1D2922]">
+            <Text className="text-base font-extrabold text-[#252B27] dark:text-[#F1F4F1]">{t('Could not load course content')}</Text>
+            <Text className="mt-2 text-center text-xs leading-5 text-[#717A74] dark:text-[#AAB6AD]">
+              {error || t('This course may no longer be available.')}
             </Text>
             <Pressable accessibilityRole="button" onPress={exitLesson} className="mt-4 rounded-lg bg-[#14543E] px-4 py-2.5">
-              <Text className="text-[10px] font-bold text-white">Go back</Text>
+              <Text className="text-[10px] font-bold text-white">{t('Go back')}</Text>
             </Pressable>
           </View>
         ) : course.status !== 'approved' ? (
-          <View className="items-center rounded-2xl bg-white px-5 py-8">
-            <Text className="text-base font-extrabold text-[#252B27]">Course not published yet</Text>
-            <Text className="mt-2 text-center text-xs leading-5 text-[#717A74]">
-              Lessons will be available after this course is approved.
+          <View className="items-center rounded-2xl bg-white px-5 py-8 dark:bg-[#1D2922]">
+            <Text className="text-base font-extrabold text-[#252B27] dark:text-[#F1F4F1]">{t('Course not published yet')}</Text>
+            <Text className="mt-2 text-center text-xs leading-5 text-[#717A74] dark:text-[#AAB6AD]">
+              {t('Lessons will be available after this course is approved.')}
             </Text>
           </View>
         ) : lessons.length === 0 ? (
-          <View className="items-center rounded-2xl bg-white px-5 py-8">
-            <Text className="text-base font-extrabold text-[#252B27]">No lessons available</Text>
-            <Text className="mt-2 text-center text-xs leading-5 text-[#717A74]">
-              The instructor has not added course lessons yet.
+          <View className="items-center rounded-2xl bg-white px-5 py-8 dark:bg-[#1D2922]">
+            <Text className="text-base font-extrabold text-[#252B27] dark:text-[#F1F4F1]">{t('No lessons available')}</Text>
+            <Text className="mt-2 text-center text-xs leading-5 text-[#717A74] dark:text-[#AAB6AD]">
+              {t('The instructor has not added course lessons yet.')}
             </Text>
           </View>
         ) : (
           <>
             <View className="mb-2 flex-row items-center justify-between">
               <Text className="text-[8px] font-extrabold uppercase tracking-[1px] text-[#59846A]">
-                Lesson {selectedLesson + 1} of {lessons.length}
+                {t('Lesson')} {selectedLesson + 1} {t('of')} {lessons.length}
               </Text>
               <Text className="text-[8px] font-bold uppercase tracking-[0.7px] text-[#59846A]">
                 ◷  {videoFile?.durationSeconds ? formatDuration(videoFile.durationSeconds) : `About ${lesson.duration}`}
               </Text>
             </View>
 
-            <Text className="text-[21px] font-medium leading-[27px] tracking-[-0.5px] text-[#22382C]">
+            <Text className="text-[21px] font-medium leading-[27px] tracking-[-0.5px] text-[#22382C] dark:text-[#F1F4F1]">
               {lesson.title}
             </Text>
 
@@ -359,7 +382,7 @@ export default function CourseContentScreen() {
                 {playbackLoading && !offlineVideoUri ? (
                   <View className="mt-3 items-center justify-center rounded-2xl bg-[#17261E] py-10">
                     <ActivityIndicator color="white" />
-                    <Text className="mt-2 text-[9px] text-white">Preparing secure video…</Text>
+                    <Text className="mt-2 text-[9px] text-white">{t('Preparing secure video…')}</Text>
                   </View>
                 ) : null}
                 {playbackError && !offlineVideoUri ? (
@@ -370,40 +393,58 @@ export default function CourseContentScreen() {
                 {activeVideoUri && (!playbackLoading || offlineVideoUri) ? (
                   <LessonVideo key={activeVideoUri} uri={activeVideoUri} title={lesson.title} />
                 ) : null}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: isVideoDownloaded || downloadingVideo || playbackLoading }}
-                  disabled={isVideoDownloaded || downloadingVideo || playbackLoading}
-                  onPress={() => { void downloadVideoForOffline(); }}
-                  className={`mt-3 h-10 flex-row items-center justify-center rounded-xl border border-[#DDE4DC] bg-white ${downloadingVideo || isVideoDownloaded ? 'opacity-75' : ''}`}
-                >
-                  <Text className="text-[9px] font-extrabold text-[#14543E]">
-                    {downloadingVideo
-                      ? `Downloading video… ${downloadProgress}%`
-                      : isVideoDownloaded
-                        ? 'Downloaded for offline  ✓'
-                        : Platform.OS === 'web'
-                          ? 'Download video'
-                          : 'Download for offline  ↓'}
-                  </Text>
-                </Pressable>
-                <Text className="mt-1 text-center text-[8px] text-[#858C87]">
+                <View className="mt-3 rounded-2xl border border-[#DDE4DC] bg-white p-3 dark:border-[#35443A] dark:bg-[#1D2922]">
+                  <View className="mb-2 flex-row items-center justify-between">
+                    <Text className="text-[9px] font-extrabold uppercase tracking-[0.8px] text-[#14543E] dark:text-[#B7E2C2]">
+                      {t('Download video')}
+                    </Text>
+                    <Text className="text-[8px] font-bold text-[#14543E] dark:text-[#B7E2C2]">
+                      {downloadingVideo ? `${downloadProgress}%` : isVideoDownloaded ? t('Saved') : t('Ready')}
+                    </Text>
+                  </View>
+
+                  <View className="h-2 overflow-hidden rounded-full bg-[#E7EAE5] dark:bg-[#35443A]">
+                    <View
+                      className={`h-full rounded-full ${downloadingVideo ? 'bg-[#14543E]' : 'bg-[#8BBB9A]'}`}
+                      style={{ width: `${downloadingVideo ? downloadProgress : isVideoDownloaded ? 100 : 0}%` }}
+                    />
+                  </View>
+
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: isVideoDownloaded || downloadingVideo || playbackLoading }}
+                    disabled={isVideoDownloaded || downloadingVideo || playbackLoading}
+                    onPress={() => { void downloadVideoForOffline(); }}
+                    className={`mt-3 h-10 flex-row items-center justify-center rounded-xl border border-[#DDE4DC] bg-[#F8FBF9] dark:border-[#35443A] dark:bg-[#101814] ${downloadingVideo || isVideoDownloaded ? 'opacity-75' : ''}`}
+                  >
+                    <Text className="text-[9px] font-extrabold text-[#14543E] dark:text-[#B7E2C2]">
+                      {downloadingVideo
+                        ? `${t('Downloading video…')} ${downloadProgress}%`
+                        : isVideoDownloaded
+                          ? `${t('Downloaded for offline')}  ✓`
+                          : Platform.OS === 'web'
+                            ? t('Download video')
+                            : `${t('Download for offline')}  ↓`}
+                    </Text>
+                  </Pressable>
+                </View>
+                <Text className="mt-1 text-center text-[8px] text-[#858C87] dark:text-[#AAB6AD]">
                   {Platform.OS === 'web'
-                    ? 'Saves the video to your browser’s downloads.'
+                    ? t('Saves the video to your browser’s downloads.')
                     : isVideoDownloaded
-                      ? 'This video is saved on your device and can play without internet.'
-                      : 'Save this video on your device to watch it offline.'}
+                      ? t('This video is saved on your device and can play without internet.')
+                      : t('Save this video on your device to watch it offline.')}
                 </Text>
               </>
             ) : pdfUri && pdfFile ? (
-              <View className="mt-3 rounded-2xl border border-[#E1E5DF] bg-white p-4">
+              <View className="mt-3 rounded-2xl border border-[#E1E5DF] bg-white p-4 dark:border-[#35443A] dark:bg-[#1D2922]">
                 <View className="flex-row items-center">
                   <View className="h-10 w-10 items-center justify-center rounded-xl bg-[#EAF1E8]">
                     <Text className="text-[10px] font-extrabold text-[#14543E]">PDF</Text>
                   </View>
                   <View className="ml-3 flex-1">
-                    <Text className="text-[10px] font-bold text-[#252B27]">Lesson notes</Text>
-                    <Text numberOfLines={1} className="mt-1 text-[8px] text-[#858C87]">{pdfFile.name}</Text>
+                    <Text className="text-[10px] font-bold text-[#252B27] dark:text-[#F1F4F1]">{t('Lesson notes')}</Text>
+                    <Text numberOfLines={1} className="mt-1 text-[8px] text-[#858C87] dark:text-[#AAB6AD]">{pdfFile.name}</Text>
                   </View>
                 </View>
                 <Pressable
@@ -411,10 +452,10 @@ export default function CourseContentScreen() {
                   onPress={() => { void openLessonPdf(); }}
                   className="mt-4 h-10 flex-row items-center justify-center rounded-xl bg-[#14543E]"
                 >
-                  <Text className="text-[9px] font-extrabold text-white">Open PDF notes  ↗</Text>
+                  <Text className="text-[9px] font-extrabold text-white">{t('Open PDF notes')}  ↗</Text>
                 </Pressable>
-                <Text className="mt-2 text-center text-[8px] text-[#858C87]">
-                  Opens in your device’s PDF viewer or browser.
+                <Text className="mt-2 text-center text-[8px] text-[#858C87] dark:text-[#AAB6AD]">
+                  {t('Opens in your device’s PDF viewer or browser.')}
                 </Text>
               </View>
             ) : (
@@ -427,7 +468,7 @@ export default function CourseContentScreen() {
                 <View className="absolute inset-0 bg-black/20" />
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Video is not available"
+                  accessibilityLabel={t('Video is not available')}
                   onPress={showUnavailableVideo}
                   className="h-12 w-12 items-center justify-center rounded-full bg-white"
                 >
@@ -435,23 +476,23 @@ export default function CourseContentScreen() {
                 </Pressable>
                 <View className="absolute bottom-2 right-2 rounded bg-black/65 px-2 py-1">
                   <Text className="text-[7px] font-bold text-white">
-                    {lesson.type === 'Video' ? 'VIDEO NOT ADDED' : 'PDF NOTES NOT ADDED'}
+                    {lesson.type === 'Video' ? t('VIDEO NOT ADDED') : t('PDF NOTES NOT ADDED')}
                   </Text>
                 </View>
               </ImageBackground>
             )}
 
-            <Text className="mt-2 text-[11px] leading-[18px] text-[#465149]">
+            <Text className="mt-2 text-[11px] leading-[18px] text-[#465149] dark:text-[#B5C0B7]">
               {lesson.type === 'Reading'
-                ? (pdfUri ? `Read the attached notes for ${lesson.title}.` : 'The instructor has not attached PDF notes to this lesson yet.')
+                ? (pdfUri ? `${t('Read the attached notes for')} ${lesson.title}.` : t('The instructor has not attached PDF notes to this lesson yet.'))
                 : (course.description || `${lesson.title} is part of ${course.title}.`)}
             </Text>
 
             {objective ? (
-              <View className="mt-3 flex-row items-start rounded-xl bg-[#E7EFE4] p-3">
+              <View className="mt-3 flex-row items-start rounded-xl bg-[#E7EFE4] p-3 dark:bg-[#23362A]">
                 <Text className="mr-2 text-[11px] text-[#477E62]">♧</Text>
-                <Text className="flex-1 text-[9px] leading-[14px] text-[#46624F]">
-                  Remember: {objective}
+                <Text className="flex-1 text-[9px] leading-[14px] text-[#46624F] dark:text-[#B5C0B7]">
+                  {t('Remember')}: {objective}
                 </Text>
               </View>
             ) : null}
@@ -470,7 +511,7 @@ export default function CourseContentScreen() {
                 onPress={() => setSelectedLesson((current) => Math.max(0, current - 1))}
                 className={`h-10 min-w-[78px] items-center justify-center rounded-xl border border-[#DDE4DC] bg-white px-3 ${isFirstLesson ? 'opacity-45' : ''}`}
               >
-                <Text className="text-[9px] font-bold text-[#14543E]">Previous</Text>
+                <Text className="text-[9px] font-bold text-[#14543E]">{t('Previous')}</Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
@@ -480,7 +521,7 @@ export default function CourseContentScreen() {
                 className={`h-10 min-w-[108px] flex-row items-center justify-center rounded-xl bg-[#14543E] px-3 ${completingLesson ? 'opacity-60' : ''}`}
               >
                 <Text className="text-[9px] font-extrabold text-white">
-                  {completingLesson ? 'Saving…' : isLastLesson ? 'Complete course' : 'Next topic  →'}
+                  {completingLesson ? t('Saving…') : isLastLesson ? t('Complete course') : `${t('Next topic')}  →`}
                 </Text>
               </Pressable>
             </View>

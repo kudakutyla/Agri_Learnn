@@ -16,8 +16,8 @@ The automated API tests cover trainer authentication/role enforcement, invalid M
 These are integration checks and require a development R2 bucket and bucket-scoped credentials configured in `server/.env`; automated tests do not fake a successful cloud upload.
 
 1. Log in to the mobile app as a trainer.
-2. Create a draft course, select a video lesson, and choose a valid MP4 below the multipart threshold.
-3. Confirm the app reports upload progress and completion. Verify the API video record and private R2 object exist; confirm the API response contains no credentials, permanent object URL, or storage key.
+2. Create a draft course, select a video lesson, and choose a valid MP4 below the multipart threshold. Confirm its duration is read automatically, displayed in the lesson form, and matches the media's actual duration.
+3. Confirm the app reports upload progress and completion. Verify the API video record and private R2 object exist; confirm the saved duration matches the selected media and the API response contains no credentials, permanent object URL, or storage key.
 4. Preview the video as the trainer and verify playback.
 5. Upload an MP4 above the configured multipart threshold. Verify each part, ETag confirmation, object size, and playback.
 6. Try an unsupported extension/MIME pair, oversized file, changed content with a non-MP4/MOV signature, expired URL, and incorrect R2 credentials. Each failure should be surfaced and should not produce an `uploaded` record.
@@ -30,4 +30,10 @@ These are integration checks and require a development R2 bucket and bucket-scop
 
 ## Current validation record
 
-The implementation was validated without R2 credentials. Automated backend tests exercise authorization and explicit missing-configuration behavior, but the following were **not run**: real R2 credential validation, object PUT/multipart completion, live signed playback, replace/delete against R2, Android/iOS device playback, and production Render configuration. Do not treat successful local tests as proof of a real R2 upload.
+Automated backend tests exercise authorization and explicit missing-configuration behavior. On 2026-11-12, a real-R2 smoke test confirmed bucket access, uploaded a temporary 32-byte MP4-header fixture, verified its object metadata and `ftyp` signature using the server verifier, received an HTTP `206` response with the requested 16-byte range through a signed playback URL, and deleted the temporary object.
+
+Also on 2026-11-12, a separate isolated API test registered a fresh trainer, created an owned draft course, obtained a signed R2 upload URL, uploaded the same 32-byte header fixture, completed server-side object verification and lesson association, and confirmed the uploaded record appeared in that trainer's video listing. The test video was deleted from R2 and all test metadata was isolated in a temporary data store and removed. This verified the registration-to-upload API flow, not the mobile app screens.
+
+The browser upload initially failed because bucket CORS allowed `http://localhost:3000`, but the Expo web app was running at `http://localhost:8081`, and the policy did not expose the multipart `ETag` response header. On 2026-11-12, the existing origins and methods were preserved, `http://localhost:8081` was added, and `ETag`, `Content-Length`, `Content-Range`, and `Accept-Ranges` were exposed. The R2 preflight returned HTTP `204` with the expected origin and PUT method. Retrying in the shared browser uploaded the trainer's selected MP4 through multipart R2 upload; the server accepted and associated it with the lesson, and the authoring screen displayed the lesson with its automatically detected 4-minute duration.
+
+The earlier 32-byte fixtures are not decodable videos and do **not** prove playback or offline playback. The following remain **not run**: learner-enrollment streaming, Android/iOS device playback, replace/delete through the mobile application, and production Render configuration. No Android device/emulator was connected, and an iOS device/simulator was unavailable on the test host. Do not treat the upload check as completion of the full real-R2 acceptance checklist.

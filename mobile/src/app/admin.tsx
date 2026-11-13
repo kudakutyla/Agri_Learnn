@@ -66,7 +66,7 @@ export default function AdminScreen() {
   const recentLearners = overview?.learnerGrowth.reduce((total, item) => total + item.learners, 0) ?? 0;
 
   return (
-    <View className="flex-1 bg-[#F7F7F2]">
+    <View className="flex-1 bg-[#F7F7F2] dark:bg-[#101814]">
       <ScrollView
         className="flex-1"
         contentContainerClassName="pb-5"
@@ -82,7 +82,7 @@ export default function AdminScreen() {
 
         <View className="-mt-3 px-4">
           {error ? (
-            <View className="mb-3 rounded-xl border border-[#F0D1C8] bg-white p-4">
+            <View className="mb-3 rounded-xl border border-[#F0D1C8] bg-white p-4 dark:bg-[#1D2922]">
               <Text accessibilityRole="alert" className="text-[11px] leading-4 text-[#9A382C]">{error}</Text>
               <Pressable
                 accessibilityRole="button"
@@ -111,16 +111,16 @@ export default function AdminScreen() {
             onPress={() => router.push({ pathname: '/admin-approvals', params: { tab: 'Pending' } })}
             className="mt-2 flex-row items-center rounded-xl border border-[#E8D29F] bg-[#F8EED7] px-3 py-3"
           >
-            <View className="mr-3 h-9 w-9 items-center justify-center rounded-lg bg-white">
+            <View className="mr-3 h-9 w-9 items-center justify-center rounded-lg bg-white dark:bg-[#1D2922]">
               <Text className="text-base text-[#9A7330]">◷</Text>
             </View>
             <View className="flex-1">
-              <Text className="text-[11px] font-extrabold text-[#57482B]">
+              <Text className="text-[11px] font-extrabold text-[#57482B] dark:text-[#E2D4AC]">
                 {loading ? 'Checking content approvals…' : overview
                   ? `${overview.metrics.pendingApprovals} content approval${overview.metrics.pendingApprovals === 1 ? '' : 's'} waiting`
                   : 'Approval count unavailable'}
               </Text>
-              <Text className="mt-1 text-[8px] leading-3 text-[#88764F]">Submitted modules awaiting administrator review</Text>
+              <Text className="mt-1 text-[8px] leading-3 text-[#88764F] dark:text-[#C7B98F]">Submitted modules awaiting administrator review</Text>
             </View>
             <Text className="ml-2 text-lg text-[#9A7330]">›</Text>
           </Pressable>
@@ -129,31 +129,31 @@ export default function AdminScreen() {
             accessibilityRole="button"
             accessibilityLabel="Manage uploaded lesson videos"
             onPress={() => router.push('/admin-videos')}
-            className="mt-2 flex-row items-center rounded-xl border border-[#DDE4DC] bg-white px-3 py-3"
+            className="mt-2 flex-row items-center rounded-xl border border-[#DDE4DC] bg-white px-3 py-3 dark:border-[#35443A] dark:bg-[#1D2922]"
           >
             <View className="mr-3 h-9 w-9 items-center justify-center rounded-lg bg-[#E8F0E7]">
               <Text className="text-base text-[#39785C]">▶</Text>
             </View>
             <View className="flex-1">
-              <Text className="text-[11px] font-extrabold text-[#252B27]">Manage lesson videos</Text>
-              <Text className="mt-1 text-[8px] leading-3 text-[#717A74]">Review upload status and remove outdated or abandoned objects</Text>
+              <Text className="text-[11px] font-extrabold text-[#252B27] dark:text-[#F1F4F1]">Manage lesson videos</Text>
+              <Text className="mt-1 text-[8px] leading-3 text-[#717A74] dark:text-[#B5C0B7]">Review upload status and remove outdated or abandoned objects</Text>
             </View>
             <Text className="ml-2 text-lg text-[#5B645E]">›</Text>
           </Pressable>
 
           <View className="mt-5 flex-row items-center justify-between">
-            <Text className="text-[15px] font-extrabold text-[#252B27]">Learner growth</Text>
+            <Text className="text-[15px] font-extrabold text-[#252B27] dark:text-[#F1F4F1]">Learner growth</Text>
             <Text className="text-[9px] font-semibold text-[#477E62]">Last 6 months</Text>
           </View>
-          <View className="mt-2 rounded-xl border border-[#E5E8E2] bg-white p-4">
-            <Text className="text-[8px] font-bold tracking-wide text-[#78817B]">NEW LEARNER REGISTRATIONS</Text>
-            <Text className="mt-1 text-[20px] font-extrabold text-[#252B27]">
+          <View className="mt-2 rounded-xl border border-[#E5E8E2] bg-white p-4 dark:border-[#35443A] dark:bg-[#1D2922]">
+            <Text className="text-[8px] font-bold tracking-wide text-[#78817B] dark:text-[#AAB6AD]">NEW LEARNER REGISTRATIONS</Text>
+            <Text className="mt-1 text-[20px] font-extrabold text-[#252B27] dark:text-[#F1F4F1]">
               {loading || !overview ? '—' : recentLearners.toLocaleString()}
             </Text>
             {loading ? (
-              <Text className="mt-5 text-[10px] text-[#78817B]">Loading registration history…</Text>
+              <Text className="mt-5 text-[10px] text-[#78817B] dark:text-[#AAB6AD]">Loading registration history…</Text>
             ) : overview ? (
-              <View accessibilityLabel={`Learner registrations by month, ${overview.learnerGrowth.map((item) => `${item.month}: ${item.learners}`).join(', ')}`} className="mt-3 h-[90px] flex-row items-end justify-between border-b border-[#E5E8E2] px-1">
+              <View accessibilityLabel={`Learner registrations by month, ${overview.learnerGrowth.map((item) => `${item.month}: ${item.learners}`).join(', ')}`} className="mt-3 h-[90px] flex-row items-end justify-between border-b border-[#E5E8E2] px-1 dark:border-[#35443A]">
                 {overview?.learnerGrowth.map((item) => (
                   <View key={item.month} className="h-full flex-1 items-center justify-end">
                     <Text className="mb-1 text-[8px] text-[#477E62]">{item.learners || ''}</Text>
@@ -161,35 +161,35 @@ export default function AdminScreen() {
                       className="w-5 rounded-t-md bg-[#39785C]"
                       style={{ height: Math.max(4, (item.learners / maxLearners) * 55) }}
                     />
-                    <Text className="mt-1 text-[8px] text-[#78817B]">{item.month}</Text>
+                    <Text className="mt-1 text-[8px] text-[#78817B] dark:text-[#AAB6AD]">{item.month}</Text>
                   </View>
                 ))}
               </View>
             ) : (
-              <Text className="mt-5 text-[10px] text-[#78817B]">Registration history is unavailable.</Text>
+              <Text className="mt-5 text-[10px] text-[#78817B] dark:text-[#AAB6AD]">Registration history is unavailable.</Text>
             )}
           </View>
 
-          <Text className="mt-5 text-[15px] font-extrabold text-[#252B27]">Recent activity</Text>
-          <View className="mt-2 overflow-hidden rounded-xl border border-[#E5E8E2] bg-white px-3">
+          <Text className="mt-5 text-[15px] font-extrabold text-[#252B27] dark:text-[#F1F4F1]">Recent activity</Text>
+          <View className="mt-2 overflow-hidden rounded-xl border border-[#E5E8E2] bg-white px-3 dark:border-[#35443A] dark:bg-[#1D2922]">
             {loading ? (
-              <Text className="py-4 text-[10px] text-[#78817B]">Loading recent activity…</Text>
+              <Text className="py-4 text-[10px] text-[#78817B] dark:text-[#AAB6AD]">Loading recent activity…</Text>
             ) : overview ? overview.recentActivity.length ? overview.recentActivity.map((activity, index) => (
-              <View key={`${activity.type}-${activity.createdAt}-${index}`} className={`flex-row items-center py-3 ${index > 0 ? 'border-t border-[#E8ECE7]' : ''}`}>
+              <View key={`${activity.type}-${activity.createdAt}-${index}`} className={`flex-row items-center py-3 ${index > 0 ? 'border-t border-[#E8ECE7] dark:border-[#35443A]' : ''}`}>
                 <View className="mr-2.5 h-8 w-8 items-center justify-center rounded-full bg-[#E8F0E7]">
                   <Text className="text-sm text-[#39785C]">
                     {activity.type === 'approval' ? '↑' : activity.type === 'learner' ? '♙' : '▣'}
                   </Text>
                 </View>
                 <View className="flex-1">
-                  <Text numberOfLines={1} className="text-[9px] font-bold text-[#34483A]">{activity.title}</Text>
-                  <Text className="mt-1 text-[8px] text-[#78817B]">{relativeTime(activity.createdAt)}</Text>
+                  <Text numberOfLines={1} className="text-[9px] font-bold text-[#34483A] dark:text-[#E2EAE3]">{activity.title}</Text>
+                  <Text className="mt-1 text-[8px] text-[#78817B] dark:text-[#AAB6AD]">{relativeTime(activity.createdAt)}</Text>
                 </View>
               </View>
             )) : (
-              <Text className="py-4 text-[10px] text-[#78817B]">No recent platform activity.</Text>
+              <Text className="py-4 text-[10px] text-[#78817B] dark:text-[#AAB6AD]">No recent platform activity.</Text>
             ) : (
-              <Text className="py-4 text-[10px] text-[#78817B]">Activity is unavailable.</Text>
+              <Text className="py-4 text-[10px] text-[#78817B] dark:text-[#AAB6AD]">Activity is unavailable.</Text>
             )}
           </View>
         </View>
@@ -202,12 +202,12 @@ export default function AdminScreen() {
 
 function MetricCard({ icon, label, value, loading }: { icon: string; label: string; value?: number; loading: boolean }) {
   return (
-    <View className="h-[90px] flex-1 justify-center rounded-xl border border-[#E5E8E2] bg-white px-3">
-      <View className="h-7 w-7 items-center justify-center rounded-lg bg-[#E8F0E7]">
+    <View className="h-[90px] flex-1 justify-center rounded-xl border border-[#E5E8E2] bg-white px-3 dark:border-[#35443A] dark:bg-[#1D2922]">
+      <View className="h-7 w-7 items-center justify-center rounded-lg bg-[#E8F0E7] dark:bg-[#23362A]">
         <Text className="text-sm text-[#39785C]">{icon}</Text>
       </View>
-      <Text className="mt-1.5 text-[7px] font-semibold tracking-wide text-[#78817B]">{label}</Text>
-      <Text className="mt-0.5 text-[17px] font-extrabold leading-5 text-[#252B27]">
+      <Text className="mt-1.5 text-[7px] font-semibold tracking-wide text-[#78817B] dark:text-[#AAB6AD]">{label}</Text>
+      <Text className="mt-0.5 text-[17px] font-extrabold leading-5 text-[#252B27] dark:text-[#F1F4F1]">
         {loading || value === undefined ? '—' : value.toLocaleString()}
       </Text>
     </View>

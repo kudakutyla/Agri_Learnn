@@ -1,21 +1,28 @@
-import { useEffect, useRef, useState } from 'react';
-import { Image, Pressable, ScrollView, Text, View, type ScrollViewInstance } from 'react-native';
-import { router } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Image, Pressable, ScrollView, Text, View, type ScrollViewInstance } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { useColorScheme } from 'nativewind';
-import { api, type Certificate } from '../services/api';
+import { api, type Certificate, type CourseProgressSummary, type Profile } from '../services/api';
+import { getDashboardLanguage } from '../services/dashboardLanguage';
 import { getCertificatePoints, getEarnedSkills } from '../services/passport';
-import { getStorageItem, setStorageItem } from '../services/storage';
+import { setStorageItem } from '../services/storage';
 import { BottomNav } from './BottomNav';
 
-const recommendationCards = [
-  { title: 'Smart Irrigation Basics', category: 'Crop production', image: 'https://images.unsplash.com/photo-1529583647475-67602abaa6f2?auto=format&fit=crop&w=500&q=80', details: '45 min · Beginner' },
-  { title: 'Healthy Herd Essentials', category: 'Livestock', image: 'https://images.unsplash.com/photo-1506349103253-e648563ec8b9?auto=format&fit=crop&w=500&q=80', details: '1.5 hrs · Beginner' },
+const recommendationImages = [
+  'https://images.unsplash.com/photo-1529583647475-67602abaa6f2?auto=format&fit=crop&w=500&q=80',
+  'https://images.unsplash.com/photo-1506349103253-e648563ec8b9?auto=format&fit=crop&w=500&q=80',
 ] as const;
 const recommendationStep = 277;
+const recommendationCount = recommendationImages.length;
 
 export default function HomeContent() {
-  const [name, setName] = useState('Thabo Mokoena');
+  const [name, setName] = useState('');
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileError, setProfileError] = useState('');
   const [certificates, setCertificates] = useState<Certificate[]>([]);
+  const [learningCourses, setLearningCourses] = useState<CourseProgressSummary[]>([]);
+  const [learningLoading, setLearningLoading] = useState(true);
+  const [learningError, setLearningError] = useState('');
   const [passportLoading, setPassportLoading] = useState(true);
   const [passportError, setPassportError] = useState('');
   const [themeError, setThemeError] = useState('');
@@ -25,11 +32,20 @@ export default function HomeContent() {
   const { colorScheme, setColorScheme } = useColorScheme();
   const isDarkMode = colorScheme === 'dark';
 
-  useEffect(() => {
-    getStorageItem('agrilearn_name').then((saved) => {
-      if (saved) setName(saved);
-    });
-  }, []);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    api.profile.get()
+      .then(({ user }) => {
+        if (!active) return;
+        setProfile(user);
+        setName(user.name);
+        setProfileError('');
+      })
+      .catch((error: unknown) => {
+        if (active) setProfileError(error instanceof Error ? error.message : 'Could not load your profile.');
+      });
+    return () => { active = false; };
+  }, []));
 
   useEffect(() => {
     let active = true;
@@ -52,18 +68,25 @@ export default function HomeContent() {
 
   useEffect(() => {
     let active = true;
-    getStorageItem('agrilearn_theme').then((savedTheme) => {
-      if (!active) return;
-      if (savedTheme === 'light' || savedTheme === 'dark') setColorScheme(savedTheme);
-    }).catch((error: unknown) => {
-      if (active) setThemeError(error instanceof Error ? error.message : 'Could not load your display preference.');
-    });
+    api.learningProgress()
+      .then((result) => {
+        if (active) {
+          setLearningCourses(result.courses);
+          setLearningError('');
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) setLearningError(error instanceof Error ? error.message : 'Could not load your course progress.');
+      })
+      .finally(() => {
+        if (active) setLearningLoading(false);
+      });
     return () => { active = false; };
-  }, [setColorScheme]);
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      const nextIndex = (activeRecommendation + 1) % recommendationCards.length;
+      const nextIndex = (activeRecommendation + 1) % recommendationCount;
       recommendationsRef.current?.scrollTo({ x: nextIndex * recommendationStep, animated: true });
       setActiveRecommendation(nextIndex);
     }, 5000);
@@ -71,13 +94,35 @@ export default function HomeContent() {
   }, [activeRecommendation]);
 
   function showRecommendation(index: number) {
-    const nextIndex = (index + recommendationCards.length) % recommendationCards.length;
+    const nextIndex = (index + recommendationCount) % recommendationCount;
     recommendationsRef.current?.scrollTo({ x: nextIndex * recommendationStep, animated: true });
     setActiveRecommendation(nextIndex);
   }
 
   const earnedSkills = getEarnedSkills(certificates);
+  const dashboardLanguage = getDashboardLanguage(profile?.language);
+  const recommendationCards = dashboardLanguage.recommendations.map((course, index) => ({
+    ...course,
+    image: recommendationImages[index],
+  }));
   const certificatePoints = getCertificatePoints(certificates);
+  const certifiedCourseIds = new Set(
+    certificates.map((certificate) => certificate.courseId).filter((courseId): courseId is string => Boolean(courseId)),
+  );
+  const currentCourse = learningCourses.find((item) => !certifiedCourseIds.has(item.course.id));
+
+  async function retryLoadLearningProgress() {
+    setLearningLoading(true);
+    setLearningError('');
+    try {
+      const result = await api.learningProgress();
+      setLearningCourses(result.courses);
+    } catch (error) {
+      setLearningError(error instanceof Error ? error.message : 'Could not load your course progress.');
+    } finally {
+      setLearningLoading(false);
+    }
+  }
 
   async function toggleTheme() {
     const nextTheme = isDarkMode ? 'light' : 'dark';
@@ -94,7 +139,7 @@ export default function HomeContent() {
   return (
     <View className="flex-1 bg-[#F7F8F4] dark:bg-[#101814]">
     <ScrollView className="flex-1" contentContainerClassName="pb-24">
-      <View className="bg-[#0B5543] px-5 pb-7 pt-5">
+      <View className="bg-[#0B5543] px-5 pb-5 pt-4">
         <View className="flex-row items-center justify-between">
           <View className="flex-row items-center gap-2">
             <Text className="text-xl text-white">♧</Text>
@@ -124,41 +169,92 @@ export default function HomeContent() {
           </View>
         </View>
         {themeError ? <Text accessibilityRole="alert" className="mt-2 text-[10px] text-white">{themeError}</Text> : null}
-        <View className="mt-8 flex-row items-center justify-between">
+        {profileError ? <Text accessibilityRole="alert" className="mt-2 text-[10px] text-white">{profileError}</Text> : null}
+        <View className="mt-5 flex-row items-center justify-between">
           <View>
-            <Text className="text-[10px] font-bold uppercase tracking-[1px] text-white/70">Good morning</Text>
-            <Text className="mt-1 text-[22px] font-extrabold text-white">{name}</Text>
-            <Text className="mt-1 text-xs text-white/70">Keep growing your agricultural knowledge.</Text>
+            <Text className="text-[10px] font-bold uppercase tracking-[1px] text-white/70">{dashboardLanguage.goodMorning}</Text>
+            <Text className="mt-1 text-xl font-extrabold text-white">{name}</Text>
+            <Text className="mt-1 text-xs text-white/70">{dashboardLanguage.learningEncouragement}</Text>
           </View>
           <View className="h-11 w-11 items-center justify-center rounded-full bg-[#F3C64A]">
             <Text className="font-extrabold text-[#5E4A15]">{name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</Text>
           </View>
         </View>
       </View>
-      <View className="bg-[#F7F8F4] px-5 pt-7 dark:bg-[#101814]">
-        <Text className="text-[10px] font-bold uppercase tracking-[1.2px] text-[#687069]">Continue learning</Text>
-        <Text className="mt-1 text-lg font-extrabold text-[#252B27] dark:text-[#F1F4F1]">Pick up where you left off</Text>
-        <Pressable onPress={() => router.push('/learning')} className="mt-4 h-[235px] overflow-hidden rounded-[21px] bg-[#255B43]">
-          <Image source={{ uri: 'https://images.unsplash.com/photo-1492496913980-501348b61469?auto=format&fit=crop&w=900&q=85' }} className="absolute inset-0 h-full w-full" resizeMode="cover" />
-          <View className="absolute inset-0 bg-black/30" />
-          <View className="flex-1 justify-end p-4">
-            <Text className="self-start rounded-full bg-[#F7C84B] px-2 py-1 text-[8px] font-extrabold text-[#55410F]">IN PROGRESS</Text>
-            <Text className="mt-2 text-base font-extrabold text-white">Soil Health Fundamentals</Text>
-            <Text className="mt-1 text-[10px] text-white/80">Lesson 4 of 6 · Understanding soil pH</Text>
-            <View className="mt-3 h-[6px] overflow-hidden rounded-full bg-white/35"><View className="h-full w-[62%] rounded-full bg-[#F7C84B]" /></View>
-            <View className="mt-2 flex-row items-center justify-between">
-              <Text className="text-[10px] text-white">62% complete</Text>
-              <View className="h-8 w-8 items-center justify-center rounded-full bg-[#F7C84B]"><Text className="text-sm text-[#183F31]">▶</Text></View>
-            </View>
+      <View className="bg-[#F7F8F4] px-5 pt-5 dark:bg-[#101814]">
+        <Text className="text-[10px] font-bold uppercase tracking-[1.2px] text-[#687069]">{dashboardLanguage.continueLearning}</Text>
+        <Text className="mt-1 text-lg font-extrabold text-[#252B27] dark:text-[#F1F4F1]">{dashboardLanguage.pickUpWhereLeftOff}</Text>
+        {learningLoading ? (
+          <View className="mt-4 h-[150px] items-center justify-center rounded-[21px] bg-[#EAF1E8] dark:bg-[#1D2922]">
+            <ActivityIndicator color="#14543E" />
+            <Text className="mt-2 text-[10px] text-[#687069] dark:text-[#AAB6AD]">{dashboardLanguage.loadingLearning}</Text>
           </View>
-        </Pressable>
-        <View className="mt-7 flex-row items-center justify-between">
-          <Text className="text-base font-extrabold text-[#252B27] dark:text-[#F1F4F1]">Recommended for you</Text>
-          <Pressable onPress={() => router.push('/explore')}><Text className="text-xs font-bold text-agrilearn-green">View all</Text></Pressable>
+        ) : learningError ? (
+          <View accessibilityRole="alert" className="mt-4 items-center rounded-[21px] border border-[#E8D2CD] bg-white px-5 py-7 dark:border-[#35443A] dark:bg-[#1D2922]">
+            <Text className="text-center text-[11px] font-bold text-[#9A5147]">{learningError}</Text>
+            <Pressable accessibilityRole="button" onPress={() => { void retryLoadLearningProgress(); }} className="mt-3 rounded-lg bg-[#14543E] px-4 py-2">
+              <Text className="text-[10px] font-bold text-white">{dashboardLanguage.tryAgain}</Text>
+            </Pressable>
+          </View>
+        ) : currentCourse ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={dashboardLanguage.continueCourse(currentCourse.course.title)}
+            onPress={() => router.push({ pathname: '/course-content', params: { courseId: currentCourse.course.id } })}
+            className="mt-4 h-[205px] overflow-hidden rounded-[21px] bg-[#255B43]"
+          >
+            {currentCourse.course.coverImage
+              ? <Image source={{ uri: currentCourse.course.coverImage }} className="absolute inset-0 h-full w-full" resizeMode="cover" />
+              : <View className="absolute inset-0 bg-[#255B43]" />}
+            <View className="absolute inset-0 bg-black/30" />
+            <View className="flex-1 justify-end p-4">
+              <Text className="self-start rounded-full bg-[#F7C84B] px-2 py-1 text-[8px] font-extrabold text-[#55410F]">
+                {currentCourse.progressPercent === 100
+                  ? dashboardLanguage.assessmentPending
+                  : currentCourse.progressPercent > 0
+                    ? dashboardLanguage.inProgress
+                    : dashboardLanguage.enrolled}
+              </Text>
+              <Text numberOfLines={2} className="mt-2 text-base font-extrabold text-white">{currentCourse.course.title}</Text>
+              <Text numberOfLines={1} className="mt-1 text-[10px] text-white/80">
+                {dashboardLanguage.lessonProgress(currentCourse.resumeLessonIndex + 1, currentCourse.course.lessons?.length ?? 0)}
+                {currentCourse.course.lessons?.[currentCourse.resumeLessonIndex]?.title
+                  ? ` · ${currentCourse.course.lessons[currentCourse.resumeLessonIndex].title}`
+                  : ''}
+              </Text>
+              <View className="mt-3 h-[6px] overflow-hidden rounded-full bg-white/35">
+                <View className="h-full rounded-full bg-[#F7C84B]" style={{ width: `${currentCourse.progressPercent}%` }} />
+              </View>
+              <View className="mt-2 flex-row items-center justify-between">
+                <Text className="text-[10px] text-white">
+                  {currentCourse.progressPercent === 100
+                    ? dashboardLanguage.lessonsCompleteAssessmentPending
+                    : dashboardLanguage.percentComplete(currentCourse.progressPercent)}
+                </Text>
+                <View className="h-8 w-8 items-center justify-center rounded-full bg-[#F7C84B]"><Text className="text-sm text-[#183F31]">▶</Text></View>
+              </View>
+            </View>
+          </Pressable>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('/explore')}
+            className="mt-4 items-center rounded-[21px] border border-[#DDE4DC] bg-white px-6 py-8 dark:border-[#35443A] dark:bg-[#1D2922]"
+          >
+            <Text className="text-sm font-extrabold text-[#252B27] dark:text-[#F1F4F1]">{dashboardLanguage.noModulesInProgress}</Text>
+            <Text className="mt-1 text-center text-[10px] text-[#717A74] dark:text-[#AAB6AD]">
+              {dashboardLanguage.enrolCourseHint}
+            </Text>
+            <Text className="mt-3 text-[10px] font-bold text-[#14543E] dark:text-[#8FC6A4]">{dashboardLanguage.exploreCourses}</Text>
+          </Pressable>
+        )}
+        <View className="mt-5 flex-row items-center justify-between">
+          <Text className="text-base font-extrabold text-[#252B27] dark:text-[#F1F4F1]">{dashboardLanguage.recommendedForYou}</Text>
+          <Pressable accessibilityRole="button" onPress={() => router.push('/explore')}><Text className="text-xs font-bold text-agrilearn-green">{dashboardLanguage.viewAll}</Text></Pressable>
         </View>
         <ScrollView
           ref={recommendationsRef}
-          accessibilityLabel="Recommended courses. Swipe horizontally to browse."
+          accessibilityLabel={dashboardLanguage.recommendedCoursesHint}
           className="mt-3"
           contentContainerClassName="gap-3 pr-5"
           decelerationRate="fast"
@@ -166,7 +262,7 @@ export default function HomeContent() {
           onLayout={(event) => setRecommendationViewportWidth(event.nativeEvent.layout.width)}
           onMomentumScrollEnd={(event) => {
             const index = Math.round(event.nativeEvent.contentOffset.x / recommendationStep);
-            setActiveRecommendation(Math.min(index, recommendationCards.length - 1));
+            setActiveRecommendation(Math.min(index, recommendationCount - 1));
           }}
           scrollEventThrottle={16}
           snapToAlignment="start"
@@ -188,7 +284,7 @@ export default function HomeContent() {
         <View className="mt-1 flex-row items-center justify-center">
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Previous recommended course"
+            accessibilityLabel={dashboardLanguage.previousRecommendedCourse}
             onPress={() => showRecommendation(activeRecommendation - 1)}
             className="h-9 w-9 items-center justify-center"
           >
@@ -198,7 +294,7 @@ export default function HomeContent() {
             <Pressable
               key={course.title}
               accessibilityRole="button"
-              accessibilityLabel={`Show ${course.title}`}
+              accessibilityLabel={dashboardLanguage.showCourse(course.title)}
               accessibilityState={{ selected: activeRecommendation === index }}
               onPress={() => showRecommendation(index)}
               className="h-9 min-w-9 items-center justify-center px-2"
@@ -208,7 +304,7 @@ export default function HomeContent() {
           ))}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Next recommended course"
+            accessibilityLabel={dashboardLanguage.nextRecommendedCourse}
             onPress={() => showRecommendation(activeRecommendation + 1)}
             className="h-9 w-9 items-center justify-center"
           >
@@ -217,20 +313,24 @@ export default function HomeContent() {
         </View>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Open Skills Passport"
+          accessibilityLabel={dashboardLanguage.skillsPassport}
           onPress={() => router.push('/passport')}
-          className="mt-6 rounded-[20px] bg-[#103D2B] p-5"
+          className="mt-5 rounded-[20px] bg-[#103D2B] p-5"
         >
-          <View className="flex-row justify-between"><Text className="text-xl text-[#C6A15B]">▣</Text><Text className="rounded-md bg-[#F5EAD4] px-2 py-1 text-[8px] font-extrabold text-[#72531D]">SKILLS PASSPORT</Text></View>
+          <View className="flex-row justify-between"><Text className="text-xl text-[#C6A15B]">▣</Text><Text className="rounded-md bg-[#F5EAD4] px-2 py-1 text-[8px] font-extrabold text-[#72531D]">{dashboardLanguage.skillsPassport}</Text></View>
           <Text className="mt-4 text-lg font-extrabold text-white">
-            {passportLoading ? 'Loading your passport' : earnedSkills.length ? 'Your skills are growing' : 'Start building your skills'}
+            {passportLoading
+              ? dashboardLanguage.loadingPassport
+              : earnedSkills.length
+                ? dashboardLanguage.skillsGrowing
+                : dashboardLanguage.startBuildingSkills}
           </Text>
           <Text className="mt-1 text-[10px] text-white/65">
             {passportError
-              ? 'Passport details unavailable'
+              ? dashboardLanguage.passportUnavailable
               : passportLoading
-                ? 'Loading earned skills and credentials…'
-                : `${earnedSkills.length} ${earnedSkills.length === 1 ? 'skill' : 'skills'} · ${certificates.length} ${certificates.length === 1 ? 'certificate' : 'certificates'} · ${certificatePoints} learning points`}
+                ? dashboardLanguage.loadingSkills
+                : `${dashboardLanguage.skillsCount(earnedSkills.length)} · ${dashboardLanguage.certificatesCount(certificates.length)} · ${dashboardLanguage.learningPointsCount(certificatePoints)}`}
           </Text>
           <View className="mt-4 flex-row">
             {earnedSkills.slice(0, 4).map((skill) => {
@@ -245,12 +345,8 @@ export default function HomeContent() {
               </View>
             ) : null}
           </View>
-          <View className="mt-4 min-h-12 flex-row items-center justify-center rounded-[14px] border border-white/15 bg-white/10"><Text className="font-bold text-white">View my passport →</Text></View>
+          <View className="mt-4 min-h-12 flex-row items-center justify-center rounded-[14px] border border-white/15 bg-white/10"><Text className="font-bold text-white">{dashboardLanguage.viewMyPassport}</Text></View>
         </Pressable>
-        <View className="mt-[18px] flex-row items-center rounded-2xl border border-[#DDE4DC] bg-white p-3 dark:border-[#35443A] dark:bg-[#1D2922]">
-          <View className="h-[42px] w-[42px] items-center justify-center rounded-[13px] bg-[#F5EAD4]"><Text className="text-xl text-[#806022]">♕</Text></View>
-          <View className="ml-3 flex-1"><Text className="text-[8px] font-extrabold tracking-[0.7px] text-[#806022]">NEW ACHIEVEMENT</Text><Text className="mt-1 text-xs font-extrabold text-[#252B27] dark:text-[#F1F4F1]">Consistent Grower</Text><Text className="mt-1 text-[9px] text-[#717A74] dark:text-[#B5C0B7]">Completed lessons 3 weeks in a row</Text></View>
-        </View>
       </View>
     </ScrollView>
     <BottomNav />
